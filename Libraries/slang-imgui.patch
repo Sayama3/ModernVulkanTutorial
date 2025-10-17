@@ -1,0 +1,21 @@
+diff --git a/external/CMakeLists.txt b/external/CMakeLists.txt
+index 12d5490c7..8797c84bc 100644
+--- a/external/CMakeLists.txt
++++ b/external/CMakeLists.txt
+@@ -240,6 +240,7 @@ if(SLANG_ENABLE_SLANG_GLSLANG)
+ endif()
+ 
+ # imgui
++if(NOT TARGET imgui)  
+ add_library(imgui INTERFACE)
+ if(NOT SLANG_OVERRIDE_IMGUI_PATH)
+     target_include_directories(
+@@ -254,7 +255,7 @@ else()
+         INTERFACE "${SLANG_OVERRIDE_IMGUI_PATH}/imgui"
+     )
+ endif()
+-
++endif()
+ # stb
+ add_library(stb INTERFACE)
+ target_include_directories(

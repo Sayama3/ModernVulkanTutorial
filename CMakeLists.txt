@@ -19,44 +19,43 @@ if(NOT VULKAN_SDK)
 	set(VULKAN_SDK $ENV{VULKAN_SDK})
 endif()
 
-#----------------------------------------------------------------------
-# 2) Find the Slang library inside that SDK
-#----------------------------------------------------------------------
-# Prefer an explicit override – useful if you have a custom build of slang.
-set(SLANG_ROOT "" CACHE PATH "Path to the Vulkan SDK root containing slang (optional)")
-if(NOT SLANG_ROOT)
-	set(SLANG_ROOT ${VULKAN_SDK})
-endif()
-
-message(STATUS "Searching for Slang in: ${SLANG_ROOT}")
-
-# Determine library name based on platform
-set(_slang_lib_names slang libslang)   # static & import lib (should be for all of linux/macos/window)
-
-find_library(
-		SLANG_LIBRARY
-		NAMES ${_slang_lib_names}
-		PATHS "${SLANG_ROOT}/lib"
-		NO_DEFAULT_PATH
-)
-
-if(NOT SLANG_LIBRARY)
-	message(FATAL_ERROR "Could not find Slang library in ${SLANG_ROOT}/lib")
-else()
-	message(STATUS "Found Slang library: ${SLANG_LIBRARY}")
-endif()
-
-#----------------------------------------------------------------------
-# 3) Create an imported target for Slang (cleaner usage later)
-#----------------------------------------------------------------------
-add_library(slang::slang STATIC IMPORTED)
-
-set_target_properties(
-		slang::slang PROPERTIES
-		IMPORTED_LOCATION          "${SLANG_LIBRARY}"
-		INTERFACE_INCLUDE_DIRECTORIES "${SLANG_ROOT}/include"
-		INTERFACE_COMPILE_FEATURES   cxx_std_20
-)
+## Prefer an explicit override – useful if you have a custom build of slang.
+#set(SLANG_ROOT "" CACHE PATH "Path to the Vulkan SDK root containing slang (optional)")
+#if(NOT SLANG_ROOT)
+#	set(SLANG_ROOT ${VULKAN_SDK})
+#endif()
+#
+#message(STATUS "Searching for Slang in: ${SLANG_ROOT}")
+#
+## Determine library name based on platform
+#if(CMAKE_BUILD_TYPE MATCHES "[Dd][Ee][Bb][Uu][Gg]")
+#	set(_slang_lib_names slangd libslangd)   # static & import lib (should be for all of linux/macos/window)
+#else()
+#	set(_slang_lib_names slang  libslang)   # static & import lib (should be for all of linux/macos/window)
+#endif()
+#
+#find_library(
+#		SLANG_LIBRARY
+#		NAMES ${_slang_lib_names}
+#		PATHS "${SLANG_ROOT}/lib"
+#		NO_DEFAULT_PATH
+#		REQUIRED
+#)
+#
+#if(NOT SLANG_LIBRARY)
+#	message(FATAL_ERROR "Could not find Slang library in ${SLANG_ROOT}/lib")
+#else()
+#	message(STATUS "Found Slang library: ${SLANG_LIBRARY}")
+#endif()
+#
+#add_library(slang::slang STATIC IMPORTED)
+#
+#set_target_properties(
+#		slang::slang PROPERTIES
+#		IMPORTED_LOCATION          "${SLANG_LIBRARY}"
+#		INTERFACE_INCLUDE_DIRECTORIES "${SLANG_ROOT}/include"
+#		INTERFACE_COMPILE_FEATURES   cxx_std_20
+#)
 
 add_subdirectory(Libraries)
 
@@ -87,7 +86,8 @@ target_link_libraries(${PROJECT_NAME} PUBLIC assimp::assimp tinyobjloader)
 target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Vulkan)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
 target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
-target_link_libraries(${PROJECT_NAME} PUBLIC slang::slang)
+#target_link_libraries(${PROJECT_NAME} PUBLIC slang::slang)
+target_link_libraries(${PROJECT_NAME} PUBLIC  slang)
 
 
 target_precompile_headers(${PROJECT_NAME} PUBLIC

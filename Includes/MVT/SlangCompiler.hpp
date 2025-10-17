@@ -30,6 +30,7 @@ namespace MVT {
 	public:
 
 		Expected<std::vector<char>, std::string> Compile(const char* moduleName, const char* entryPoint);
+		Expected<std::vector<char>, std::string> CompileByPath(const std::filesystem::path&, const char* entryPoint);
 	private:
 		Slang::ComPtr<slang::ISession>  m_Session = nullptr;
 		slang::SessionDesc m_SessionDescription{};
