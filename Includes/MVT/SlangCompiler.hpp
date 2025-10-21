@@ -34,7 +34,7 @@ namespace MVT {
 
 	private:
 		Expected<std::vector<char>, std::string> CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName, const char *entryPointName);
-
+		void ReflectModule(slang::ProgramLayout* programLayout);
 	private:
 		Slang::ComPtr<slang::ISession>  m_Session = nullptr;
 		slang::SessionDesc m_SessionDescription{};
