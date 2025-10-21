@@ -18,6 +18,10 @@ namespace MVT {
 		static void Shutdown();
 
 		static SlangProfileID FindProfile(const char* name);
+	public:
+		static Expected<std::vector<char>, std::string> s_Compile(const char* shaderName, const char* entryPoint);
+		static Expected<std::vector<char>, std::string> s_CompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+		static void ResetCompiler();
 	private:
 		static inline SlangGlobalSessionDesc s_Desc{};
 		static inline slang::IGlobalSession* s_GlobalSession = nullptr;
@@ -29,8 +33,10 @@ namespace MVT {
 		~SlangCompiler();
 	public:
 
-		Expected<std::vector<char>, std::string> Compile(const char* moduleName, const char* entryPoint);
-		Expected<std::vector<char>, std::string> CompileByPath(const std::filesystem::path&, const char* entryPoint);
+		Expected<std::vector<char>, std::string> Compile(const char* shaderName, const char* entryPoint);
+		Expected<std::vector<char>, std::string> CompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+
+		static void AddPath(const std::filesystem::path &path);
 
 	private:
 		Expected<std::vector<char>, std::string> CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName, const char *entryPointName);
@@ -39,5 +45,8 @@ namespace MVT {
 		Slang::ComPtr<slang::ISession>  m_Session = nullptr;
 		slang::SessionDesc m_SessionDescription{};
 		SlangResult m_SessionResult = 0;
+	private:
+		static inline std::unique_ptr<SlangCompiler> s_MainCompiler{nullptr};
+		static inline std::vector<std::string> s_SearchPaths{};
 	};
 } // MVT

@@ -52,6 +52,8 @@ namespace MVT {
 		if (SLANG_FAILED(s_GlobalSessionResult)) {
 			std::cerr << "Slang ERR: Failed to create the global session. (Facility :" << SLANG_GET_RESULT_FACILITY(s_GlobalSessionResult) << " ; Code :" << SLANG_GET_RESULT_CODE(s_GlobalSessionResult) << ")" << std::endl;
 		}
+
+		s_MainCompiler = std::make_unique<SlangCompiler>();
 	}
 
 	void SlangCompiler::Initialize(const SlangGlobalSessionDesc &desc) {
@@ -60,6 +62,8 @@ namespace MVT {
 	}
 
 	void SlangCompiler::Shutdown() {
+		s_MainCompiler.reset();
+
 		const uint64_t compilerInUse = s_SlangCompilersInUse.load(std::memory_order::acquire);
 		if (compilerInUse > 0) {
 			std::cerr << "Slang ERR: Trying to shutdown but " << compilerInUse << " compilers are still in use." <<
@@ -76,6 +80,18 @@ namespace MVT {
 	SlangProfileID SlangCompiler::FindProfile(const char *name) {
 		assert(s_GlobalSession);
 		return s_GlobalSession->findProfile(name);
+	}
+
+	Expected<std::vector<char>, std::string> SlangCompiler::s_Compile(const char *shaderName, const char *entryPoint) {
+		return s_MainCompiler->Compile(shaderName, entryPoint);
+	}
+
+	Expected<std::vector<char>, std::string> SlangCompiler::s_CompileByPath(const std::filesystem::path & shaderPath, const char *entryPoint) {
+		return s_MainCompiler->CompileByPath(shaderPath, entryPoint);
+	}
+
+	void SlangCompiler::ResetCompiler() {
+		s_MainCompiler.reset(new SlangCompiler());
 	}
 
 	SlangCompiler::SlangCompiler() : m_SessionDescription{} {
@@ -105,13 +121,13 @@ namespace MVT {
 		m_SessionDescription.compilerOptionEntries = options.data();
 		m_SessionDescription.compilerOptionEntryCount = options.size();
 
-		// TODO: Add all path where there could be shaders
-		static const auto c_DefaultShaderPath = (std::filesystem::current_path() / "EngineAssets/Shaders");
-		static const auto c_StrDefaultShaderPath = c_DefaultShaderPath.generic_string();
-
-		const char* searchPaths[] = {c_StrDefaultShaderPath.c_str()};
-		m_SessionDescription.searchPaths = searchPaths;
-		m_SessionDescription.searchPathCount = 1;
+		const uint32_t count = s_SearchPaths.size();
+		std::vector<const char*> searchPaths{count};
+		for (uint32_t i = 0; i < count; ++i) {
+			searchPaths[i] = s_SearchPaths[i].c_str();
+		}
+		m_SessionDescription.searchPaths = searchPaths.data();
+		m_SessionDescription.searchPathCount = count;
 
 		m_SessionResult = s_GlobalSession->createSession(m_SessionDescription, m_Session.writeRef());
 		if (SLANG_SUCCEEDED(m_SessionResult)) {
@@ -125,28 +141,28 @@ namespace MVT {
 		}
 	}
 
-	Expected<std::vector<char>, std::string> SlangCompiler::Compile(const char *moduleName, const char *entryPointName) {
+	Expected<std::vector<char>, std::string> SlangCompiler::Compile(const char *shaderName, const char *entryPointName) {
 		assert(SLANG_SUCCEEDED(m_SessionResult));
 
 		Slang::ComPtr<slang::IBlob> diagnostics;
 		Slang::ComPtr<slang::IModule> slangModule;
-		auto mdl = m_Session->loadModule(moduleName, diagnostics.writeRef());
+		auto mdl = m_Session->loadModule(shaderName, diagnostics.writeRef());
 		slangModule.attach(mdl);
 
 
 		auto msg = checkDiagnostics(diagnostics);
 		if (msg) {
-			std::cerr << std::format("Compile Error [{0}] [{1}]\n", moduleName, entryPointName) << msg.value() << std::endl;
+			std::cerr << std::format("Compile Error [{0}] [{1}]\n", shaderName, entryPointName) << msg.value() << std::endl;
 			return std::move(msg.value());
 		}
 
 		if (!mdl) {
-			std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
+			std::string error = std::format("Slang ERR: module '{}' not found.", shaderName);
 			std::cerr << error << std::endl;
 			return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
 		}
 
-		return CompileModule(std::move(slangModule), moduleName, entryPointName);
+		return CompileModule(std::move(slangModule), shaderName, entryPointName);
 	}
 
 	Expected<std::vector<char>, std::string> SlangCompiler::CompileByPath(const std::filesystem::path &shaderPath, const char *entryPointName) {
@@ -202,6 +218,10 @@ namespace MVT {
 		}
 
 		return CompileModule(std::move(slangModule), moduleName.c_str(), entryPointName);
+	}
+
+	void SlangCompiler::AddPath(const std::filesystem::path &path) {
+		s_SearchPaths.emplace_back(path.generic_string());
 	}
 
 	Expected<std::vector<char>, std::string> SlangCompiler::CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName, const char *entryPointName) {

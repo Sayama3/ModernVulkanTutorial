@@ -3,23 +3,14 @@
 #include "MVT/SlangCompiler.hpp"
 
 int main() {
-
-	// For more slang info : https://docs.shader-slang.org/en/latest/external/slang/docs/user-guide/08-compiling.html
-	SlangGlobalSessionDesc globalDesc{};
-	globalDesc.apiVersion = SlangLanguageVersion::SLANG_LANGUAGE_VERSION_LATEST;
-	globalDesc.enableGLSL = false;
-
-	MVT::SlangCompiler::Initialize(globalDesc);
-
+	MVT::SlangCompiler::AddPath(std::filesystem::current_path() / "EngineAssets/Shaders");
+	MVT::SlangCompiler::Initialize();
 
 	std::vector<char> vertex;
 	std::vector<char> fragment;
 	{
-
-		MVT::SlangCompiler compiler;
-
-		auto vertex_spirv = compiler.Compile("initial.slang", "vertMain");
-		auto fragment_spirv = compiler.Compile("initial.slang", "fragMain");
+		auto vertex_spirv = MVT::SlangCompiler::s_Compile("initial.slang", "vertMain");
+		auto fragment_spirv = MVT::SlangCompiler::s_Compile("initial.slang", "fragMain");
 
 		if (vertex_spirv.has_value()) { vertex = vertex_spirv.value(); }
 		if (fragment_spirv.has_value()) { fragment = fragment_spirv.value(); }
