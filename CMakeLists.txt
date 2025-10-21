@@ -75,6 +75,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_ENABLE_EXPERIMENTAL=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_LEFT_HANDED=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC NOMINMAX=1)
+#target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_HPP_NO_EXCEPTIONS=1)
 
 target_include_directories(${PROJECT_NAME} PUBLIC Includes)
 target_include_directories(${PROJECT_NAME} PRIVATE Sources)
@@ -86,8 +87,7 @@ target_link_libraries(${PROJECT_NAME} PUBLIC assimp::assimp tinyobjloader)
 target_link_libraries(${PROJECT_NAME} PUBLIC Vulkan::Vulkan)
 target_link_libraries(${PROJECT_NAME} PUBLIC SDL3::SDL3)
 target_link_libraries(${PROJECT_NAME} PUBLIC imgui)
-#target_link_libraries(${PROJECT_NAME} PUBLIC slang::slang)
-target_link_libraries(${PROJECT_NAME} PUBLIC  slang)
+target_link_libraries(${PROJECT_NAME} PUBLIC slang)
 
 
 target_precompile_headers(${PROJECT_NAME} PUBLIC

@@ -1,24 +1,31 @@
 #include <iostream>
 
+#include "MVT/Application.hpp"
 #include "MVT/SlangCompiler.hpp"
+
+#include <iostream>
+#include <stdexcept>
+#include <cstdlib>
 
 int main() {
 	MVT::SlangCompiler::AddPath(std::filesystem::current_path() / "EngineAssets/Shaders");
+
 	MVT::SlangCompiler::Initialize();
 
-	std::vector<char> vertex;
-	std::vector<char> fragment;
-	{
-		auto vertex_spirv = MVT::SlangCompiler::s_Compile("initial.slang", "vertMain");
-		auto fragment_spirv = MVT::SlangCompiler::s_Compile("initial.slang", "fragMain");
+	std::unique_ptr<MVT::Application> app = std::make_unique<MVT::Application>();
 
-		if (vertex_spirv.has_value()) { vertex = vertex_spirv.value(); }
-		if (fragment_spirv.has_value()) { fragment = fragment_spirv.value(); }
+	try {
+		app->run();
+	} catch (const std::exception& e) {
+		std::cerr << e.what() << std::endl;
+
+		app.reset();
+		MVT::SlangCompiler::Shutdown();
+		return EXIT_FAILURE;
 	}
 
-	std::cout << "Vertex : " << vertex.size() << " bytes." << std::endl;
-	std::cout << "Fragment : " << fragment.size() << " bytes." << std::endl;
-
+	app.reset();
 	MVT::SlangCompiler::Shutdown();
-	return 0;
+
+	return EXIT_SUCCESS;
 }

@@ -49,4 +49,22 @@ namespace MVT {
 		static inline std::unique_ptr<SlangCompiler> s_MainCompiler{nullptr};
 		static inline std::vector<std::string> s_SearchPaths{};
 	};
+
+
+	class SlangLifetime {
+	public:
+		SlangLifetime() {
+			SlangCompiler::Initialize();
+		}
+
+		SlangLifetime(const SlangGlobalSessionDesc& desc) {
+			SlangCompiler::Initialize(desc);
+		}
+		~SlangLifetime() {
+			SlangCompiler::Shutdown();
+		}
+
+		SlangLifetime(const SlangLifetime&) = delete;
+		SlangLifetime& operator=(const SlangLifetime&) = delete;
+	};
 } // MVT
