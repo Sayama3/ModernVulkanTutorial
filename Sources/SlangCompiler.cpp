@@ -6,339 +6,274 @@
 
 #include <cassert>
 #include <format>
+#include <array>
+#include <string>
+
 #include <slang/slang-com-ptr.h>
 #include <slang/slang-com-helper.h>
 
 #include "MVT/Expected.hpp"
 
+#define MVT_ARG1(arg1, ...) arg1
+#define MVT_ARG2(arg1, arg2, ...) arg2
+#define MVT_SLANG_RETURN_ON_FAIL(...) \
+{ \
+	SlangResult _res = MVT_ARG1(__VA_ARGS__); \
+	if (SLANG_FAILED(_res)) \
+	{ \
+		std::string message = MVT_ARG2(__VA_ARGS__, "Slang ERR: Slang command failed."); \
+		return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); \
+	} \
+}
 
-namespace MVT
-{
-    void SlangCompiler::Initialize()
-    {
-        s_GlobalSessionResult = slang::createGlobalSession(&s_GlobalSession);
-        if (SLANG_FAILED(s_GlobalSessionResult))
-        {
-            std::cerr << "Slang ERR: Failed to create the global session. (Facility :" << SLANG_GET_RESULT_FACILITY(s_GlobalSessionResult) << " ; Code :" << SLANG_GET_RESULT_CODE(s_GlobalSessionResult) << ")" << std::endl;
-        }
-    }
+namespace MVT {
+	std::optional<std::string> checkDiagnostics(Slang::ComPtr<slang::IBlob> diagnosticsBlob) {
+		if (diagnosticsBlob != nullptr) {
+			return (const char *) diagnosticsBlob->getBufferPointer();
+		}
 
-    void SlangCompiler::Initialize(const SlangGlobalSessionDesc& desc)
-    {
-        s_Desc = desc;
-        Initialize();
-    }
+		return std::nullopt;
+	}
 
-    void SlangCompiler::Shutdown()
-    {
-        const uint64_t compilerInUse = s_SlangCompilersInUse.load(std::memory_order::acquire);
-        if (compilerInUse > 0)
-        {
-            std::cerr << "Slang ERR: Trying to shutdown but " << compilerInUse << " compilers are still in use." <<
-                std::endl;
-        }
+	void diagnoseIfNeeded(Slang::ComPtr<slang::IBlob> diagnosticsBlob, const char* preMsg = "Slang Diag ERR: ", const char* postMsg = "") {
+		if (diagnosticsBlob != nullptr) {
+			std::cerr << preMsg << (const char *) diagnosticsBlob->getBufferPointer() << postMsg << std::endl;
+		}
+	}
 
-        slang::shutdown();
+	void diagnoseIfNeeded(slang::IBlob *diagnosticsBlob, const char* preMsg = "Slang Diag ERR: ", const char* postMsg = "") {
+		if (diagnosticsBlob != nullptr) {
+			std::cerr << preMsg << (const char *) diagnosticsBlob->getBufferPointer() << postMsg << std::endl;
+		}
+	}
 
-        s_Desc = {};
-        s_GlobalSession = nullptr;
-        s_GlobalSessionResult = 0;
-    }
+	void SlangCompiler::Initialize() {
+		s_GlobalSessionResult = slang::createGlobalSession(&s_GlobalSession);
+		if (SLANG_FAILED(s_GlobalSessionResult)) {
+			std::cerr << "Slang ERR: Failed to create the global session. (Facility :" << SLANG_GET_RESULT_FACILITY(s_GlobalSessionResult) << " ; Code :" << SLANG_GET_RESULT_CODE(s_GlobalSessionResult) << ")" << std::endl;
+		}
+	}
 
-    SlangProfileID SlangCompiler::FindProfile(const char* name)
-    {
-        assert(s_GlobalSession);
-        return s_GlobalSession->findProfile(name);
-    }
+	void SlangCompiler::Initialize(const SlangGlobalSessionDesc &desc) {
+		s_Desc = desc;
+		Initialize();
+	}
 
-    SlangCompiler::SlangCompiler()
-    {
-        assert(s_GlobalSession);
+	void SlangCompiler::Shutdown() {
+		const uint64_t compilerInUse = s_SlangCompilersInUse.load(std::memory_order::acquire);
+		if (compilerInUse > 0) {
+			std::cerr << "Slang ERR: Trying to shutdown but " << compilerInUse << " compilers are still in use." <<
+					std::endl;
+		}
 
-        // Change the profile depending on the target.
-        slang::TargetDesc targetDesc{};
-        targetDesc.format = SLANG_SPIRV;
-        targetDesc.profile = MVT::SlangCompiler::FindProfile("spirv_1_4");
+		slang::shutdown();
 
-        slang::SessionDesc sessionDesc{};
-        sessionDesc.targets = &targetDesc;
-        sessionDesc.targetCount = 1;
+		s_Desc = {};
+		s_GlobalSession = nullptr;
+		s_GlobalSessionResult = 0;
+	}
 
-        std::array<slang::CompilerOptionEntry, 1> options =
-        {
-            {
-                slang::CompilerOptionName::EmitSpirvDirectly,
-                {slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
-            }
-        };
-        sessionDesc.compilerOptionEntries = options.data();
-        sessionDesc.compilerOptionEntryCount = options.size();
+	SlangProfileID SlangCompiler::FindProfile(const char *name) {
+		assert(s_GlobalSession);
+		return s_GlobalSession->findProfile(name);
+	}
 
-        // TODO: Add all path where there could be shaders
-        static const auto c_DefaultShaderPath = (std::filesystem::current_path() / "EngineAssets/Shaders");
-        static const auto c_StrDefaultShaderPath = c_DefaultShaderPath.generic_string();
-        const char* searchPaths[] = {c_StrDefaultShaderPath.c_str()};
-        sessionDesc.searchPaths = searchPaths;
-        sessionDesc.searchPathCount = 1;
+	SlangCompiler::SlangCompiler() : m_SessionDescription{} {
+		assert(s_GlobalSession);
 
-        slang::PreprocessorMacroDesc mvtFlag = {"MVT", "1"};
-        sessionDesc.preprocessorMacros = &mvtFlag;
-        sessionDesc.preprocessorMacroCount = 1;
+		// Change the profile depending on the target.
+		slang::TargetDesc targetDesc{};
+		targetDesc.format = SlangCompileTarget::SLANG_SPIRV;
+		targetDesc.profile = MVT::SlangCompiler::FindProfile("spirv_1_4");
+		m_SessionDescription.targets = &targetDesc;
+		m_SessionDescription.targetCount = 1;
 
-        m_SessionResult = s_GlobalSession->createSession(m_SessionDescription, m_Session.writeRef());
-        if (SLANG_SUCCEEDED(m_SessionResult))
-        {
-            s_SlangCompilersInUse.fetch_add(1, std::memory_order::release);
-        }
-    }
+		std::array<slang::PreprocessorMacroDesc, 1> preprocessorMacroDesc =
+		{
+			slang::PreprocessorMacroDesc{"MVT", "1"},
+		};
+		m_SessionDescription.preprocessorMacros = preprocessorMacroDesc.data();
+		m_SessionDescription.preprocessorMacroCount = preprocessorMacroDesc.size();
 
-    SlangCompiler::~SlangCompiler()
-    {
-        if (SLANG_SUCCEEDED(m_SessionResult))
-        {
-            s_SlangCompilersInUse.fetch_sub(1, std::memory_order::release);
-        }
-    }
+		std::array<slang::CompilerOptionEntry, 1> options =
+		{
+			{
+				slang::CompilerOptionName::EmitSpirvDirectly,
+				{slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
+			}
+		};
+		m_SessionDescription.compilerOptionEntries = options.data();
+		m_SessionDescription.compilerOptionEntryCount = options.size();
 
-    Expected<std::vector<char>, std::string> SlangCompiler::Compile(const char* moduleName, const char* entryPointName)
-    {
-        assert(SLANG_SUCCEEDED(m_SessionResult));
+		// TODO: Add all path where there could be shaders
+		static const auto c_DefaultShaderPath = (std::filesystem::current_path() / "EngineAssets/Shaders");
+		static const auto c_StrDefaultShaderPath = c_DefaultShaderPath.generic_string();
 
-        Slang::ComPtr<slang::IBlob> diagnostics;
-        Slang::ComPtr<slang::IModule> slangModule;
-        auto mdl = m_Session->loadModule(moduleName, diagnostics.writeRef());
-        slangModule.attach(mdl);
+		const char* searchPaths[] = {c_StrDefaultShaderPath.c_str()};
+		m_SessionDescription.searchPaths = searchPaths;
+		m_SessionDescription.searchPathCount = 1;
 
-        if (diagnostics)
-        {
-            std::string error = std::format("Slang ERR: {0}", diagnostics->getBufferPointer());
-            std::cerr << error << std::endl;
-            return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
-        }
+		m_SessionResult = s_GlobalSession->createSession(m_SessionDescription, m_Session.writeRef());
+		if (SLANG_SUCCEEDED(m_SessionResult)) {
+			s_SlangCompilersInUse.fetch_add(1, std::memory_order::release);
+		}
+	}
 
-        if (!mdl)
-        {
-            std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
-            std::cerr << error << std::endl;
-            return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
-        }
+	SlangCompiler::~SlangCompiler() {
+		if (SLANG_SUCCEEDED(m_SessionResult)) {
+			s_SlangCompilersInUse.fetch_sub(1, std::memory_order::release);
+		}
+	}
 
-        Slang::ComPtr<slang::IEntryPoint> entryPoint;
-        const auto epRes = slangModule->findEntryPointByName(entryPointName, entryPoint.writeRef());
-        if (SLANG_FAILED(epRes))
-        {
-            return Expected<std::vector<char>, std::string>::unexpected(
-                std::format("Slang ERR: Error getting entry point {} in module {}", entryPointName, moduleName));
-        }
+	Expected<std::vector<char>, std::string> SlangCompiler::Compile(const char *moduleName, const char *entryPointName) {
+		assert(SLANG_SUCCEEDED(m_SessionResult));
 
-        // For the reflection
-        // slang::ProgramLayout* layout = program->getLayout();
-        std::array<slang::IComponentType*, 2> componentTypes =
-        {
-            slangModule,
-            entryPoint
-        };
-        Slang::ComPtr<slang::IComponentType> composedProgram;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = m_Session->createCompositeComponentType(
-                componentTypes.data(),
-                componentTypes.size(),
-                composedProgram.writeRef(),
-                diagnosticsBlob.writeRef());
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to create a composite component.");
-                }
-            };
-        }
-
-        Slang::ComPtr<slang::IComponentType> linkedProgram;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = composedProgram->link(
-                linkedProgram.writeRef(),
-                diagnosticsBlob.writeRef());
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to link the program.");
-                }
-            };
-        }
-
-        Slang::ComPtr<slang::IBlob> spirvCode;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = linkedProgram->getEntryPointCode(
-                0, // entryPointIndex
-                0, // targetIndex
-                spirvCode.writeRef(),
-                diagnosticsBlob.writeRef());
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to get the spirV Code.");
-                }
-            };
-        }
-
-        std::vector<char> spirv(spirvCode->getBufferSize(), '/0');
-        memcpy(spirv.data(), spirvCode->getBufferPointer(), spirvCode->getBufferSize());
+		Slang::ComPtr<slang::IBlob> diagnostics;
+		Slang::ComPtr<slang::IModule> slangModule;
+		auto mdl = m_Session->loadModule(moduleName, diagnostics.writeRef());
+		slangModule.attach(mdl);
 
 
-        return Expected<std::vector<char>, std::string>::expected(std::move(spirv));
-    }
+		auto msg = checkDiagnostics(diagnostics);
+		if (msg) {
+			std::cerr << std::format("Compile Error [{0}] [{1}]\n", moduleName, entryPointName) << msg.value() << std::endl;
+			return std::move(msg.value());
+		}
 
-    Expected<std::vector<char>, std::string> SlangCompiler::CompileByPath(const std::filesystem::path& shaderPath, const char* entryPointName)
-    {
-        assert(SLANG_SUCCEEDED(m_SessionResult));
+		if (!mdl) {
+			std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
+			std::cerr << error << std::endl;
+			return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
+		}
 
-        const auto pStr = shaderPath.string();
-        if (!std::filesystem::exists(shaderPath))
-        {
-            std::string error = std::format("Slang ERR: The shader '{0}' doesn't exist", pStr);
-            std::cerr << error << std::endl;
-            return std::move(error);
-        }
+		return CompileModule(std::move(slangModule), moduleName, entryPointName);
+	}
 
-        const std::uintmax_t file_size = std::filesystem::file_size(shaderPath);
-        if (file_size == static_cast<std::uintmax_t>(-1))
-        {
-            std::string error = std::format("File ERR: The shader '{0}' couldn't be sized.", pStr);
-            std::cerr << error << std::endl;
-            return std::move(error);
-        }
+	Expected<std::vector<char>, std::string> SlangCompiler::CompileByPath(const std::filesystem::path &shaderPath, const char *entryPointName) {
+		assert(SLANG_SUCCEEDED(m_SessionResult));
 
-        std::string content(file_size, '\0');
-        {
-            std::ifstream shaderFile;
-            shaderFile.open(shaderPath);
+		const auto pStr = shaderPath.string();
+		if (!std::filesystem::exists(shaderPath)) {
+			std::string error = std::format("Slang ERR: The shader '{0}' doesn't exist", pStr);
+			std::cerr << error << std::endl;
+			return std::move(error);
+		}
 
-            if (!shaderFile)
-            {
-                std::string error = std::format("Slang ERR: The shader '{0}' couldn't be opened.", pStr);
-                std::cerr << error << std::endl;
-                return std::move(error);
-            }
+		const std::uintmax_t file_size = std::filesystem::file_size(shaderPath);
+		if (file_size == static_cast<std::uintmax_t>(-1)) {
+			std::string error = std::format("File ERR: The shader '{0}' couldn't be sized.", pStr);
+			std::cerr << error << std::endl;
+			return std::move(error);
+		}
 
-            shaderFile.read(content.data(), file_size);
-        }
+		std::string content(file_size, '\0'); {
+			std::ifstream shaderFile;
+			shaderFile.open(shaderPath);
 
-        const std::string moduleName = shaderPath.filename().string();
+			if (!shaderFile) {
+				std::string error = std::format("Slang ERR: The shader '{0}' couldn't be opened.", pStr);
+				std::cerr << error << std::endl;
+				return std::move(error);
+			}
 
-        Slang::ComPtr<slang::IBlob> diagnostics;
-        Slang::ComPtr<slang::IModule> slangModule;
+			shaderFile.read(content.data(), file_size);
+		}
 
-        // auto mdl = m_Session->loadModule(moduleName.c_str(), diagnostics.writeRef());
+		const std::string moduleName = shaderPath.filename().string();
 
-        auto mdl = m_Session->loadModuleFromSourceString(moduleName.c_str(), pStr.c_str(), content.c_str(), diagnostics.writeRef());
-        slangModule.attach(mdl);
+		Slang::ComPtr<slang::IBlob> diagnostics;
+		Slang::ComPtr<slang::IModule> slangModule;
 
-        if (diagnostics)
-        {
-            std::string error = std::format("Slang ERR: {0}", diagnostics->getBufferPointer());
-            std::cerr << error << std::endl;
-            return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
-        }
+		// auto mdl = m_Session->loadModule(moduleName.c_str(), diagnostics.writeRef());
 
-        if (!mdl)
-        {
-            std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
-            std::cerr << error << std::endl;
-            return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
-        }
+		auto mdl = m_Session->loadModuleFromSourceString(moduleName.c_str(), pStr.c_str(), content.c_str(), diagnostics.writeRef());
+		slangModule.attach(mdl);
 
-        Slang::ComPtr<slang::IEntryPoint> entryPoint;
-        const auto epRes = slangModule->findEntryPointByName(entryPointName, entryPoint.writeRef());
-        if (SLANG_FAILED(epRes))
-        {
-            return Expected<std::vector<char>, std::string>::unexpected(
-                std::format("Slang ERR: Error getting entry point {} in module {}", entryPointName, moduleName));
-        }
+		auto msg = checkDiagnostics(diagnostics);
+		if (msg) {
+			std::cerr << std::format("Compile Error [{0}] [{1}]\n", pStr, entryPointName) << msg.value() << std::endl;
+			return std::move(msg.value());
+		}
 
-        // For the reflection
-        // slang::ProgramLayout* layout = program->getLayout();
-        std::array<slang::IComponentType*, 2> componentTypes =
-        {
-            slangModule,
-            entryPoint
-        };
-        Slang::ComPtr<slang::IComponentType> composedProgram;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = m_Session->createCompositeComponentType(
-                componentTypes.data(),
-                componentTypes.size(),
-                composedProgram.writeRef(),
-                diagnosticsBlob.writeRef());
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to create a composite component.");
-                }
-            };
-        }
+		if (!mdl) {
+			std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
+			std::cerr << error << std::endl;
+			return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
+		}
 
-        Slang::ComPtr<slang::IComponentType> linkedProgram;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = composedProgram->link(
-                linkedProgram.writeRef(),
-                diagnosticsBlob.writeRef());
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to link the program.");
-                }
-            };
-        }
+		return CompileModule(std::move(slangModule), moduleName.c_str(), entryPointName);
+	}
 
-        Slang::ComPtr<slang::IBlob> spirvCode;
-        {
-            Slang::ComPtr<slang::IBlob> diagnosticsBlob;
-            SlangResult result = linkedProgram->getTargetCode(
-                0, // targetIndex
-                spirvCode.writeRef(),
-                diagnosticsBlob.writeRef());
-            linkedProgram->getSp
-            // diagnoseIfNeeded(diagnosticsBlob);
-            {
-                SlangResult _res = (result);
-                if (SLANG_FAILED(_res))
-                {
-                    SLANG_HANDLE_RESULT_FAIL(_res);
-                    return Expected<std::vector<char>, std::string>::unexpected(
-                        "Slang ERR: Failed to get the spirV Code.");
-                }
-            };
-        }
+	Expected<std::vector<char>, std::string> SlangCompiler::CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName, const char *entryPointName) {
+		if (!slangModule) {
+			std::string error = std::format("Slang ERR: module '{}' not found.", moduleName);
+			std::cerr << error << std::endl;
+			return Expected<std::vector<char>, std::string>::unexpected(std::move(error));
+		}
 
-        std::vector<char> spirv(spirvCode->getBufferSize(), '/0');
-        memcpy(spirv.data(), spirvCode->getBufferPointer(), spirvCode->getBufferSize());
+		Slang::ComPtr<slang::IEntryPoint> entryPoint;
+		const auto epRes = slangModule->findEntryPointByName(entryPointName, entryPoint.writeRef());
+		// MVT_SLANG_RETURN_ON_FAIL(epRes, std::format("Slang ERR: Error getting entry point {} in module {}", entryPointName, moduleName))
+		MVT_SLANG_RETURN_ON_FAIL(epRes)
+
+		// For the reflection
+		// slang::ProgramLayout* layout = program->getLayout();
+
+		std::array<slang::IComponentType *, 2> componentTypes =
+		{
+			slangModule,
+			entryPoint
+		};
+
+		Slang::ComPtr<slang::IComponentType> composedProgram; {
+			Slang::ComPtr<slang::IBlob> diagnosticsBlob;
+			SlangResult result = m_Session->createCompositeComponentType(
+				componentTypes.data(),
+				componentTypes.size(),
+				composedProgram.writeRef(),
+				diagnosticsBlob.writeRef());
+			diagnoseIfNeeded(diagnosticsBlob);
+			// MVT_SLANG_RETURN_ON_FAIL(result, "Slang ERR: Failed to create a composite component.");
+			MVT_SLANG_RETURN_ON_FAIL(result);
+		}
+
+		Slang::ComPtr<slang::IComponentType> linkedProgram; {
+			Slang::ComPtr<slang::IBlob> diagnosticsBlob;
+			SlangResult result = composedProgram->link(
+				linkedProgram.writeRef(),
+				diagnosticsBlob.writeRef());
+			diagnoseIfNeeded(diagnosticsBlob);
+			// MVT_SLANG_RETURN_ON_FAIL(result, "Slang ERR: Failed to link the program.");
+			MVT_SLANG_RETURN_ON_FAIL(result);
+		}
 
 
-        return Expected<std::vector<char>, std::string>::expected(std::move(spirv));
-    }
+		Slang::ComPtr<slang::IBlob> spirvCode;
+
+		{
+			Slang::ComPtr<slang::IBlob> diagnosticsBlob;
+			SlangResult result = linkedProgram->getEntryPointCode(
+				0, // entryPointIndex
+				0, // targetIndex
+				spirvCode.writeRef(),
+				diagnosticsBlob.writeRef());
+			diagnoseIfNeeded(diagnosticsBlob);
+			MVT_SLANG_RETURN_ON_FAIL(result);
+		}
+
+		// {
+		// 	Slang::ComPtr<slang::IBlob> diagnosticsBlob;
+		// 	SlangResult result = linkedProgram->getTargetCode(
+		// 		0, // targetIndex
+		// 		spirvCode.writeRef(),
+		// 		diagnosticsBlob.writeRef());
+		// 	diagnoseIfNeeded(diagnosticsBlob);
+		// 	MVT_SLANG_RETURN_ON_FAIL(result);
+		// }
+
+		std::vector<char> spirv(spirvCode->getBufferSize(), '/0');
+		memcpy(spirv.data(), spirvCode->getBufferPointer(), spirvCode->getBufferSize());
+
+		return Expected<std::vector<char>, std::string>::expected(std::move(spirv));
+	}
 } // MVT

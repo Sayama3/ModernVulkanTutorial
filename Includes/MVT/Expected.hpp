@@ -48,7 +48,6 @@ namespace MVT
 
         Expected(const Err& err) : data(err)
         {
-            new(data.data()) Err(err);
         }
 
         Expected(Err&& err) : data(std::move(err))

@@ -18,8 +18,8 @@ int main() {
 
 		MVT::SlangCompiler compiler;
 
-		auto vertex_spirv = compiler.CompileByPath("EngineAssets/Shaders/initial.slang", "vertMain");
-		auto fragment_spirv = compiler.CompileByPath("EngineAssets/Shaders/initial.slang", "fragMain");
+		auto vertex_spirv = compiler.Compile("initial.slang", "vertMain");
+		auto fragment_spirv = compiler.Compile("initial.slang", "fragMain");
 
 		if (vertex_spirv.has_value()) { vertex = vertex_spirv.value(); }
 		if (fragment_spirv.has_value()) { fragment = fragment_spirv.value(); }
