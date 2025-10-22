@@ -21,6 +21,10 @@ namespace MVT {
 	public:
 		static Expected<std::vector<char>, std::string> s_Compile(const char* shaderName, const char* entryPoint);
 		static Expected<std::vector<char>, std::string> s_CompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+
+		static Expected<std::vector<char>, std::string> s_OneShotCompile(const char* shaderName, const char* entryPoint);
+		static Expected<std::vector<char>, std::string> s_OneShotCompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+
 		static void ResetCompiler();
 	private:
 		static inline SlangGlobalSessionDesc s_Desc{};

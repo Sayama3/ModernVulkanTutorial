@@ -23,12 +23,17 @@ namespace MVT {
 		return vk::False;
 	}
 
-	void Application::run() {
+	Application::Application() {
 		initWindow("Modern Vulkan");
 		initVulkan("Modern Vulkan");
-		setupDebugMessenger();
-		mainLoop();
+	}
+
+	Application::~Application() {
 		cleanup();
+	}
+
+	void Application::run() {
+		mainLoop();
 	}
 
 	void Application::initWindow(const char *appName, WindowParameters parameters) {
@@ -47,6 +52,8 @@ namespace MVT {
 
 	void Application::initVulkan(const char *appName) {
 		createInstance(appName);
+		setupDebugMessenger();
+		pickPhysicalDevice();
 	}
 
 	void Application::mainLoop() {
@@ -73,6 +80,11 @@ namespace MVT {
 	}
 
 	void Application::cleanup() {
+		graphicsQueue.clear();
+
+		device.clear();
+
+		physicalDevice.clear();
 
 		if constexpr (enableValidationLayers) {
 			debugMessenger.clear();
@@ -87,8 +99,11 @@ namespace MVT {
 	}
 
 	void Application::createInstance(const char *appName) {
-		vk::ApplicationInfo appInfo{appName, VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), vk::ApiVersion14};
-
+		vk::ApplicationInfo appInfo{ .pApplicationName   = appName,
+			.applicationVersion = VK_MAKE_VERSION( 1, 0, 0 ),
+			.pEngineName        = "No Engine",
+			.engineVersion      = VK_MAKE_VERSION( 1, 0, 0 ),
+			.apiVersion         = vk::ApiVersion14 };
 		// Get the required layers
 		std::vector<char const*> requiredLayers;
 		if constexpr (enableValidationLayers) {
@@ -103,22 +118,28 @@ namespace MVT {
 									   { return strcmp(layerProperty.layerName, requiredLayer) == 0; });
 		}))
 		{
-			throw std::runtime_error("One or more required layers are not supported!");
+			throw std::runtime_error("[Vulkan] One or more required layers are not supported!");
 		}
 
-		const auto extensions = GetExtensions();
+		const auto requiredExtensions = GetExtensions();
 		// Check if the required GLFW extensions are supported by the Vulkan implementation.
 		// auto [extRes, extensionProperties] = context.enumerateInstanceExtensionProperties();
 		// assert(extRes == vk::Result::eSuccess);
 		auto extensionProperties = context.enumerateInstanceExtensionProperties();
 
-		for (auto extension : extensions) {
+		for (auto extension : requiredExtensions) {
 				if (std::find_if(extensionProperties.begin(), extensionProperties.end(), [&extension](const vk::ExtensionProperties &extensionProperty) { return strcmp(extensionProperty.extensionName, extension) == 0; }) == extensionProperties.end()) {
-				throw std::runtime_error("Required window extension not supported: " + std::string{extension});
+				throw std::runtime_error("[Vulkan] Required window extension not supported: " + std::string{extension});
 			}
 		}
 
-		vk::InstanceCreateInfo createInfo{GetInstanceFlags(),&appInfo, requiredLayers, extensions};
+		vk::InstanceCreateInfo createInfo{
+			.pApplicationInfo        = &appInfo,
+			.enabledLayerCount       = static_cast<uint32_t>(requiredLayers.size()),
+			.ppEnabledLayerNames     = requiredLayers.data(),
+			.enabledExtensionCount   = static_cast<uint32_t>(requiredExtensions.size()),
+			.ppEnabledExtensionNames = requiredExtensions.data()
+		};
 
 		// auto [instRes, inst] = context.createInstance(createInfo);
 		// assert(instRes == vk::Result::eSuccess);
@@ -144,13 +165,114 @@ namespace MVT {
 		vk::DebugUtilsMessageSeverityFlagsEXT severityFlags( vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError );
 		vk::DebugUtilsMessageTypeFlagsEXT    messageTypeFlags( vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation );
 		vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{
-			vk::DebugUtilsMessengerCreateFlagsEXT{},
-			severityFlags,
-			messageTypeFlags,
-			&debugCallback,
-			this,
-			};
+			.messageSeverity = severityFlags,
+			.messageType = messageTypeFlags,
+			.pfnUserCallback = &debugCallback
+		};
 		debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
+	}
+
+	bool Application::RatePhysicalDevice(const std::vector<vk::raii::PhysicalDevice>::value_type &device, uint32_t &score) {
+		auto deviceProperties = device.getProperties();
+		auto deviceFeatures = device.getFeatures();
+		score = 0;
+
+		// Application can't function without geometry shaders
+		if (!deviceFeatures.geometryShader) {
+			return false;
+		}
+
+		// Application can't function without tessellation shaders
+		if (!deviceFeatures.tessellationShader) {
+			return false;
+		}
+
+		// Discrete GPUs have a significant performance advantage
+		if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+			score += 1000;
+		}
+
+		// Maximum possible size of textures affects graphics quality
+		score += deviceProperties.limits.maxImageDimension2D;
+
+		return true;
+	}
+
+	void Application::pickPhysicalDevice() {
+		auto devices = instance.enumeratePhysicalDevices();
+		if (devices.empty()) {
+			throw std::runtime_error("[Vulkan] failed to find GPUs with Vulkan support!");
+		}
+
+		// Use an ordered map to automatically sort candidates by increasing score
+		std::multimap<int, vk::raii::PhysicalDevice> candidates;
+
+		for (const auto& device : devices) {
+			uint32_t score;
+
+			if (!RatePhysicalDevice(device, score)) continue;
+
+			candidates.insert(std::make_pair(score, device));
+		}
+
+		// Check if the best candidate is suitable at all
+		if (candidates.rbegin()->first > 0) {
+			physicalDevice = candidates.rbegin()->second;
+		} else {
+			throw std::runtime_error("[Vulkan] failed to find a suitable GPU!");
+		}
+	}
+
+	uint32_t Application::findQueueFamilies(vk::PhysicalDevice device) {
+		// find the index of the first queue family that supports graphics
+		std::vector<vk::QueueFamilyProperties> queueFamilyProperties = device.getQueueFamilyProperties();
+
+		// get the first index into queueFamilyProperties which supports graphics
+		auto graphicsQueueFamilyProperty =
+				std::find_if( queueFamilyProperties.begin(),
+							  queueFamilyProperties.end(),
+							  []( vk::QueueFamilyProperties const & qfp ) { return qfp.queueFlags & vk::QueueFlagBits::eGraphics; } );
+
+		return static_cast<uint32_t>( std::distance( queueFamilyProperties.begin(), graphicsQueueFamilyProperty ) );
+	}
+
+	void Application::createLogicalDevice() {
+		std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
+
+		// Currently only return a graphic compatible family.
+		const uint32_t graphicsIndex = findQueueFamilies(physicalDevice);
+		float queuePriority = 0.0f;
+
+		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos {vk::DeviceQueueCreateInfo { .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority }};
+
+		vk::PhysicalDeviceFeatures deviceFeatures{};
+
+		// Create a chain of feature structures
+		vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
+			{},                               // vk::PhysicalDeviceFeatures2 (empty for now)
+			{.dynamicRendering = true },      // Enable dynamic rendering from Vulkan 1.3
+			{.extendedDynamicState = true }   // Enable extended dynamic state from the extension
+		};
+
+		// Extensions needed for the application to work properly
+		std::vector<const char*> deviceExtensions = {
+			vk::KHRSwapchainExtensionName,
+			vk::KHRSpirv14ExtensionName,
+			vk::KHRSynchronization2ExtensionName,
+			vk::KHRCreateRenderpass2ExtensionName
+		};
+
+		vk::DeviceCreateInfo deviceCreateInfo{
+			.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+			.queueCreateInfoCount = static_cast<uint32_t>(deviceQueueCreateInfos.size()),
+			.pQueueCreateInfos = deviceQueueCreateInfos.data(),
+			.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
+			.ppEnabledExtensionNames = deviceExtensions.data()
+		};
+
+		device = vk::raii::Device( physicalDevice, deviceCreateInfo );
+
+		graphicsQueue = vk::raii::Queue( device, graphicsIndex, 0 );
 	}
 
 	std::vector<const char *> Application::GetExtensions() {

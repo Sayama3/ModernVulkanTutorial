@@ -90,6 +90,16 @@ namespace MVT {
 		return s_MainCompiler->CompileByPath(shaderPath, entryPoint);
 	}
 
+	Expected<std::vector<char>, std::string> SlangCompiler::s_OneShotCompile(const char *shaderName, const char *entryPoint) {
+		SlangCompiler compiler{};
+		return compiler.Compile(shaderName, entryPoint);
+	}
+
+	Expected<std::vector<char>, std::string> SlangCompiler::s_OneShotCompileByPath(const std::filesystem::path &shaderPath, const char *entryPoint) {
+		SlangCompiler compiler{};
+		return compiler.CompileByPath(shaderPath, entryPoint);
+	}
+
 	void SlangCompiler::ResetCompiler() {
 		s_MainCompiler.reset(new SlangCompiler());
 	}

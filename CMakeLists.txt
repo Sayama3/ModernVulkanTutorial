@@ -75,6 +75,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_DEPTH_ZERO_TO_ONE=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_ENABLE_EXPERIMENTAL=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC GLM_FORCE_LEFT_HANDED=1)
 target_compile_definitions(${PROJECT_NAME} PUBLIC NOMINMAX=1)
+target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_HPP_NO_STRUCT_CONSTRUCTORS=1)
 #target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_HPP_NO_EXCEPTIONS=1)
 
 target_include_directories(${PROJECT_NAME} PUBLIC Includes)
