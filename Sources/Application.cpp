@@ -14,9 +14,19 @@
 #include <algorithm>
 
 namespace MVT {
+
+	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*) {
+		if (severity >= vk::DebugUtilsMessageSeverityFlagBitsEXT::eInfo) {
+			std::cerr << "validation layer: type " << to_string(type) << " msg: " << pCallbackData->pMessage << std::endl;
+		}
+
+		return vk::False;
+	}
+
 	void Application::run() {
 		initWindow("Modern Vulkan");
 		initVulkan("Modern Vulkan");
+		setupDebugMessenger();
 		mainLoop();
 		cleanup();
 	}
@@ -63,6 +73,13 @@ namespace MVT {
 	}
 
 	void Application::cleanup() {
+
+		if constexpr (enableValidationLayers) {
+			debugMessenger.clear();
+		}
+
+		instance.clear();
+
 		if (m_Window) {
 			SDL_DestroyWindow(m_Window);
 			m_Window = nullptr;
@@ -70,28 +87,38 @@ namespace MVT {
 	}
 
 	void Application::createInstance(const char *appName) {
-		constexpr vk::ApplicationInfo appInfo{"Hello Triangle", VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), vk::ApiVersion14};
+		vk::ApplicationInfo appInfo{appName, VK_MAKE_VERSION(1, 0, 0), "No Engine", VK_MAKE_VERSION(1, 0, 0), vk::ApiVersion14};
 
-		const auto [extensions, count] = GetExtensions();
+		// Get the required layers
+		std::vector<char const*> requiredLayers;
+		if constexpr (enableValidationLayers) {
+			requiredLayers.assign(validationLayers.begin(), validationLayers.end());
+		}
+
+		// Check if the required layers are supported by the Vulkan implementation.
+		auto layerProperties = context.enumerateInstanceLayerProperties();
+		if (std::ranges::any_of(requiredLayers, [&layerProperties](auto const& requiredLayer) {
+			return std::ranges::none_of(layerProperties,
+									   [requiredLayer](auto const& layerProperty)
+									   { return strcmp(layerProperty.layerName, requiredLayer) == 0; });
+		}))
+		{
+			throw std::runtime_error("One or more required layers are not supported!");
+		}
+
+		const auto extensions = GetExtensions();
 		// Check if the required GLFW extensions are supported by the Vulkan implementation.
 		// auto [extRes, extensionProperties] = context.enumerateInstanceExtensionProperties();
 		// assert(extRes == vk::Result::eSuccess);
 		auto extensionProperties = context.enumerateInstanceExtensionProperties();
 
-		for (uint64_t i = 0; i < count; ++i) {
-			const char *const extension = extensions[i];
-
-			if (std::find_if(extensionProperties.begin(), extensionProperties.end(), [&extension](const vk::ExtensionProperties &extensionProperty) { return strcmp(extensionProperty.extensionName, extension) == 0; }) == extensionProperties.end()) {
+		for (auto extension : extensions) {
+				if (std::find_if(extensionProperties.begin(), extensionProperties.end(), [&extension](const vk::ExtensionProperties &extensionProperty) { return strcmp(extensionProperty.extensionName, extension) == 0; }) == extensionProperties.end()) {
 				throw std::runtime_error("Required window extension not supported: " + std::string{extension});
 			}
 		}
 
-		vk::InstanceCreateInfo createInfo{
-			{},
-			&appInfo,
-			count,
-			extensions
-		};
+		vk::InstanceCreateInfo createInfo{GetInstanceFlags(),&appInfo, requiredLayers, extensions};
 
 		// auto [instRes, inst] = context.createInstance(createInfo);
 		// assert(instRes == vk::Result::eSuccess);
@@ -111,9 +138,46 @@ namespace MVT {
 		// }
 	}
 
-	std::pair<const char * const *, uint32_t> Application::GetExtensions() {
+	void Application::setupDebugMessenger() {
+		if constexpr (!enableValidationLayers) return;
+
+		vk::DebugUtilsMessageSeverityFlagsEXT severityFlags( vk::DebugUtilsMessageSeverityFlagBitsEXT::eVerbose | vk::DebugUtilsMessageSeverityFlagBitsEXT::eWarning | vk::DebugUtilsMessageSeverityFlagBitsEXT::eError );
+		vk::DebugUtilsMessageTypeFlagsEXT    messageTypeFlags( vk::DebugUtilsMessageTypeFlagBitsEXT::eGeneral | vk::DebugUtilsMessageTypeFlagBitsEXT::ePerformance | vk::DebugUtilsMessageTypeFlagBitsEXT::eValidation );
+		vk::DebugUtilsMessengerCreateInfoEXT debugUtilsMessengerCreateInfoEXT{
+			vk::DebugUtilsMessengerCreateFlagsEXT{},
+			severityFlags,
+			messageTypeFlags,
+			&debugCallback,
+			this,
+			};
+		debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
+	}
+
+	std::vector<const char *> Application::GetExtensions() {
+		std::vector<const char*> vecExtensions;
 		Uint32 extensionCount;
 		char const *const *extensions = SDL_Vulkan_GetInstanceExtensions(&extensionCount);
-		return {extensions, extensionCount};
+
+		vecExtensions.reserve(extensionCount + 2);
+
+		vecExtensions.insert(vecExtensions.end(), extensions, extensions + extensionCount);
+
+		if constexpr (enableValidationLayers) {
+			vecExtensions.push_back(vk::EXTDebugUtilsExtensionName );
+		}
+
+#ifdef __APPLE__
+		vecExtensions.push_back(vk::KHRPortabilityEnumerationExtensionName);
+#endif
+
+		return std::move(vecExtensions);
+	}
+
+	vk::Flags<vk::InstanceCreateFlagBits> Application::GetInstanceFlags() {
+#ifdef __APPLE__
+		return vk::InstanceCreateFlagBits::eEnumeratePortabilityKHR;
+#else
+		return {};
+#endif
 	}
 } // MVT

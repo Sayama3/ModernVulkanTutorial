@@ -17,6 +17,17 @@ namespace MVT {
 	};
 
 	class Application {
+	public: // Vulkan Specific
+		static inline const std::vector validationLayers = {
+			"VK_LAYER_KHRONOS_validation",
+		};
+
+#ifdef NDEBUG
+		static inline constexpr bool enableValidationLayers = false;
+#else
+		static inline constexpr bool enableValidationLayers = true;
+#endif
+
 	public:
 		void run();
 	private:
@@ -26,13 +37,19 @@ namespace MVT {
 		void cleanup();
 	private:// Vulkan Specific
 		void createInstance(const char *appName);
+		void setupDebugMessenger();
 	private: // Window Specific
-		std::pair<const char* const *, uint32_t> GetExtensions();
+		/// Get all the extensions including compatibility layer and stuff like that.
+		/// @return Necessary Extensions
+		std::vector<const char*> GetExtensions();
+
+		vk::Flags<vk::InstanceCreateFlagBits> GetInstanceFlags();
 	private: // Window Specific
 		struct SDL_Window *m_Window{nullptr};
 		bool m_ShouldClose = false;
 	private: // Vulkan Specicif
 		vk::raii::Context  context;
 		vk::raii::Instance instance = nullptr;
+		vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 	};
 } // MVT
