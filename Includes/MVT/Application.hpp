@@ -45,8 +45,9 @@ namespace MVT {
 
 		bool RatePhysicalDevice(const std::vector<vk::raii::PhysicalDevice>::value_type &device, uint32_t &score);
 		void pickPhysicalDevice();
-		uint32_t findQueueFamilies(vk::PhysicalDevice device);
+		uint32_t findQueueFamilies(vk::PhysicalDevice device, vk::QueueFlags queueType);
 		void createLogicalDevice();
+		void createSurface();
 
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
@@ -64,5 +65,7 @@ namespace MVT {
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		vk::raii::Device device = nullptr;
 		vk::raii::Queue graphicsQueue = nullptr;
+		vk::raii::SurfaceKHR surface = nullptr;
+		vk::raii::Queue presentQueue = nullptr;
 	};
 } // MVT

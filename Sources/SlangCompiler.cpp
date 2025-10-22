@@ -107,10 +107,12 @@ namespace MVT {
 	SlangCompiler::SlangCompiler() : m_SessionDescription{} {
 		assert(s_GlobalSession);
 
+		static SlangProfileID spirv_1_4 = MVT::SlangCompiler::FindProfile("spirv_1_4");
+
 		// Change the profile depending on the target.
 		slang::TargetDesc targetDesc{};
 		targetDesc.format = SlangCompileTarget::SLANG_SPIRV;
-		targetDesc.profile = MVT::SlangCompiler::FindProfile("spirv_1_4");
+		targetDesc.profile = spirv_1_4;
 		m_SessionDescription.targets = &targetDesc;
 		m_SessionDescription.targetCount = 1;
 

@@ -54,6 +54,7 @@ namespace MVT {
 		createInstance(appName);
 		setupDebugMessenger();
 		pickPhysicalDevice();
+		createSurface();
 	}
 
 	void Application::mainLoop() {
@@ -223,7 +224,7 @@ namespace MVT {
 		}
 	}
 
-	uint32_t Application::findQueueFamilies(vk::PhysicalDevice device) {
+	uint32_t Application::findQueueFamilies(vk::PhysicalDevice device, vk::QueueFlags queueType) {
 		// find the index of the first queue family that supports graphics
 		std::vector<vk::QueueFamilyProperties> queueFamilyProperties = device.getQueueFamilyProperties();
 
@@ -231,7 +232,7 @@ namespace MVT {
 		auto graphicsQueueFamilyProperty =
 				std::find_if( queueFamilyProperties.begin(),
 							  queueFamilyProperties.end(),
-							  []( vk::QueueFamilyProperties const & qfp ) { return qfp.queueFlags & vk::QueueFlagBits::eGraphics; } );
+							  [queueType]( vk::QueueFamilyProperties const & qfp ) { return qfp.queueFlags & queueType; } );
 
 		return static_cast<uint32_t>( std::distance( queueFamilyProperties.begin(), graphicsQueueFamilyProperty ) );
 	}
@@ -240,12 +241,55 @@ namespace MVT {
 		std::vector<vk::QueueFamilyProperties> queueFamilyProperties = physicalDevice.getQueueFamilyProperties();
 
 		// Currently only return a graphic compatible family.
-		const uint32_t graphicsIndex = findQueueFamilies(physicalDevice);
 		float queuePriority = 0.0f;
+		uint32_t graphicsIndex = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eGraphics);
 
-		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos {vk::DeviceQueueCreateInfo { .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority }};
+		// determine a queueFamilyIndex that supports present
+		// first check if the graphicsIndex is good enough
+		uint32_t presentIndex = physicalDevice.getSurfaceSupportKHR( graphicsIndex, *surface )
+										   ? graphicsIndex
+										   : static_cast<uint32_t>( queueFamilyProperties.size() );
 
-		vk::PhysicalDeviceFeatures deviceFeatures{};
+		if ( presentIndex == queueFamilyProperties.size() ) {
+			// the graphicsIndex doesn't support present -> look for another family index that supports both
+			// graphics and present
+			for ( size_t i = 0; i < queueFamilyProperties.size(); i++ )
+			{
+				if ( ( queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics ) &&
+					 physicalDevice.getSurfaceSupportKHR( static_cast<uint32_t>( i ), *surface ) )
+				{
+					graphicsIndex = static_cast<uint32_t>( i );
+					presentIndex  = graphicsIndex;
+					break;
+				}
+			}
+
+			if ( presentIndex == queueFamilyProperties.size() )
+			{
+				// there's nothing like a single family index that supports both graphics and present -> look for another
+				// family index that supports present
+				for ( size_t i = 0; i < queueFamilyProperties.size(); i++ )
+				{
+					if ( physicalDevice.getSurfaceSupportKHR( static_cast<uint32_t>( i ), *surface ) )
+					{
+						presentIndex = static_cast<uint32_t>( i );
+						break;
+					}
+				}
+			}
+		}
+
+		if ( ( graphicsIndex == queueFamilyProperties.size() ) || ( presentIndex == queueFamilyProperties.size() ) )
+		{
+			throw std::runtime_error( "[Vulkan] Could not find a queue for graphics or present -> terminating" );
+		}
+
+		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos {
+			vk::DeviceQueueCreateInfo { .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority },
+			vk::DeviceQueueCreateInfo { .queueFamilyIndex = presentIndex, .queueCount = 1, .pQueuePriorities = &queuePriority },
+		};
+
+		vk::PhysicalDeviceFeatures physicalDeviceFeatures = physicalDevice.getFeatures();
 
 		// Create a chain of feature structures
 		vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
@@ -271,8 +315,20 @@ namespace MVT {
 		};
 
 		device = vk::raii::Device( physicalDevice, deviceCreateInfo );
-
 		graphicsQueue = vk::raii::Queue( device, graphicsIndex, 0 );
+		presentQueue = vk::raii::Queue( device, presentIndex, 0 );
+	}
+
+	void Application::createSurface() {
+
+		VkSurfaceKHR tmpSurface;
+		const bool result = SDL_Vulkan_CreateSurface(m_Window, *instance, nullptr, &tmpSurface);
+
+		if (!result) {
+			throw std::runtime_error("[SDL] Couldn't create a Vulkan Surface.\n" + std::string(SDL_GetError()));
+		}
+
+		surface = {instance, tmpSurface, nullptr};
 	}
 
 	std::vector<const char *> Application::GetExtensions() {
