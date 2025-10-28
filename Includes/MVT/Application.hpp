@@ -94,10 +94,10 @@ namespace MVT {
 		vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		vk::raii::Device device = nullptr;
-		uint32_t graphicsFamily;
+		uint32_t graphicsFamily{};
 		vk::raii::Queue graphicsQueue = nullptr;
 		vk::raii::SurfaceKHR surface = nullptr;
-		uint32_t presentFamily;
+		uint32_t presentFamily{};
 		vk::raii::Queue presentQueue = nullptr;
 		vk::Format swapChainImageFormat = vk::Format::eUndefined;
 		vk::Extent2D swapChainExtent;
