@@ -53,8 +53,10 @@ namespace MVT {
 	void Application::initVulkan(const char *appName) {
 		createInstance(appName);
 		setupDebugMessenger();
-		pickPhysicalDevice();
 		createSurface();
+		pickPhysicalDevice();
+		createLogicalDevice();
+		createSwapChain();
 	}
 
 	void Application::mainLoop() {
@@ -81,11 +83,16 @@ namespace MVT {
 	}
 
 	void Application::cleanup() {
+		swapChain.clear();
+
+		presentQueue.clear();
 		graphicsQueue.clear();
 
 		device.clear();
 
 		physicalDevice.clear();
+
+		surface.clear();
 
 		if constexpr (enableValidationLayers) {
 			debugMessenger.clear();
@@ -242,15 +249,15 @@ namespace MVT {
 
 		// Currently only return a graphic compatible family.
 		float queuePriority = 0.0f;
-		uint32_t graphicsIndex = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eGraphics);
+		graphicsFamily = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eGraphics);
 
 		// determine a queueFamilyIndex that supports present
 		// first check if the graphicsIndex is good enough
-		uint32_t presentIndex = physicalDevice.getSurfaceSupportKHR( graphicsIndex, *surface )
-										   ? graphicsIndex
-										   : static_cast<uint32_t>( queueFamilyProperties.size() );
+		presentFamily = physicalDevice.getSurfaceSupportKHR(graphicsFamily, *surface)
+						   ? graphicsFamily
+						   : static_cast<uint32_t>(queueFamilyProperties.size());
 
-		if ( presentIndex == queueFamilyProperties.size() ) {
+		if ( presentFamily == queueFamilyProperties.size() ) {
 			// the graphicsIndex doesn't support present -> look for another family index that supports both
 			// graphics and present
 			for ( size_t i = 0; i < queueFamilyProperties.size(); i++ )
@@ -258,13 +265,13 @@ namespace MVT {
 				if ( ( queueFamilyProperties[i].queueFlags & vk::QueueFlagBits::eGraphics ) &&
 					 physicalDevice.getSurfaceSupportKHR( static_cast<uint32_t>( i ), *surface ) )
 				{
-					graphicsIndex = static_cast<uint32_t>( i );
-					presentIndex  = graphicsIndex;
+					graphicsFamily = static_cast<uint32_t>( i );
+					presentFamily  = graphicsFamily;
 					break;
 				}
 			}
 
-			if ( presentIndex == queueFamilyProperties.size() )
+			if ( presentFamily == queueFamilyProperties.size() )
 			{
 				// there's nothing like a single family index that supports both graphics and present -> look for another
 				// family index that supports present
@@ -272,22 +279,30 @@ namespace MVT {
 				{
 					if ( physicalDevice.getSurfaceSupportKHR( static_cast<uint32_t>( i ), *surface ) )
 					{
-						presentIndex = static_cast<uint32_t>( i );
+						presentFamily = static_cast<uint32_t>( i );
 						break;
 					}
 				}
 			}
 		}
 
-		if ( ( graphicsIndex == queueFamilyProperties.size() ) || ( presentIndex == queueFamilyProperties.size() ) )
+		if ( ( graphicsFamily == queueFamilyProperties.size() ) || ( presentFamily == queueFamilyProperties.size() ) )
 		{
 			throw std::runtime_error( "[Vulkan] Could not find a queue for graphics or present -> terminating" );
 		}
 
-		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos {
-			vk::DeviceQueueCreateInfo { .queueFamilyIndex = graphicsIndex, .queueCount = 1, .pQueuePriorities = &queuePriority },
-			vk::DeviceQueueCreateInfo { .queueFamilyIndex = presentIndex, .queueCount = 1, .pQueuePriorities = &queuePriority },
-		};
+
+		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos;
+		if (graphicsFamily == presentFamily) {
+			deviceQueueCreateInfos = {
+				vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
+			};
+		} else {
+			deviceQueueCreateInfos = {
+				vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
+				vk::DeviceQueueCreateInfo{.queueFamilyIndex = presentFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
+			};
+		}
 
 		vk::PhysicalDeviceFeatures physicalDeviceFeatures = physicalDevice.getFeatures();
 
@@ -315,8 +330,8 @@ namespace MVT {
 		};
 
 		device = vk::raii::Device( physicalDevice, deviceCreateInfo );
-		graphicsQueue = vk::raii::Queue( device, graphicsIndex, 0 );
-		presentQueue = vk::raii::Queue( device, presentIndex, 0 );
+		graphicsQueue = vk::raii::Queue( device, graphicsFamily, 0 );
+		presentQueue = vk::raii::Queue( device, presentFamily, 0 );
 	}
 
 	void Application::createSurface() {
@@ -329,6 +344,86 @@ namespace MVT {
 		}
 
 		surface = {instance, tmpSurface, nullptr};
+	}
+
+	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
+		for (const auto& availableFormat : availableFormats) {
+			if (availableFormat.format == vk::Format::eB8G8R8A8Srgb && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+				return availableFormat;
+			}
+		}
+
+		// Backup, the first one should be good enough for my use case if I don't have what I want.
+		return availableFormats[0];
+	}
+
+	vk::PresentModeKHR Application::chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
+		// Target PC where energy is not a concern, Mailbox is better if available
+		for (const auto& availablePresentMode : availablePresentModes) {
+			if (availablePresentMode == vk::PresentModeKHR::eMailbox) {
+				return availablePresentMode;
+			}
+		}
+
+		// Backup, Guaranteed to be available
+		return vk::PresentModeKHR::eFifo;
+	}
+
+	vk::Extent2D Application::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
+		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+			return capabilities.currentExtent;
+		}
+
+		const auto [width, height] = GetFramebufferSize();
+
+		return {
+			std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+			std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+		};
+	}
+
+	void Application::createSwapChain() {
+		auto surfaceCapabilities = physicalDevice.getSurfaceCapabilitiesKHR( surface );
+		std::vector<vk::SurfaceFormatKHR> availableFormats = physicalDevice.getSurfaceFormatsKHR( surface );
+		std::vector<vk::PresentModeKHR> availablePresentModes = physicalDevice.getSurfacePresentModesKHR( surface );
+
+		auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
+		auto swapChainExtent = chooseSwapExtent(surfaceCapabilities);
+
+		auto minImageCount = std::max( 3u, surfaceCapabilities.minImageCount );
+		minImageCount = ( surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount ) ? surfaceCapabilities.maxImageCount : minImageCount;
+
+		uint32_t imageCount = surfaceCapabilities.minImageCount + 1;
+		if (surfaceCapabilities.maxImageCount > 0 && imageCount > surfaceCapabilities.maxImageCount) {
+			imageCount = surfaceCapabilities.maxImageCount;
+		}
+
+		vk::SwapchainCreateInfoKHR swapChainCreateInfo{
+			.flags = vk::SwapchainCreateFlagsKHR(), .
+			surface = surface, .minImageCount = minImageCount,
+			.imageFormat = swapChainSurfaceFormat.format, .imageColorSpace = swapChainSurfaceFormat.colorSpace,
+			.imageExtent = swapChainExtent, .imageArrayLayers =1,
+			.imageUsage = vk::ImageUsageFlagBits::eColorAttachment, .imageSharingMode = vk::SharingMode::eExclusive,
+			.preTransform = surfaceCapabilities.currentTransform, .compositeAlpha = vk::CompositeAlphaFlagBitsKHR::eOpaque,
+			.presentMode = chooseSwapPresentMode(physicalDevice.getSurfacePresentModesKHR( surface )),
+			.clipped = true, .oldSwapchain = nullptr };
+
+		uint32_t queueFamilyIndices[] = {graphicsFamily, presentFamily};
+
+		if (graphicsFamily != presentFamily) {
+			swapChainCreateInfo.imageSharingMode = vk::SharingMode::eConcurrent;
+			swapChainCreateInfo.queueFamilyIndexCount = 2;
+			swapChainCreateInfo.pQueueFamilyIndices = queueFamilyIndices;
+		} else {
+			swapChainCreateInfo.imageSharingMode = vk::SharingMode::eExclusive;
+			swapChainCreateInfo.queueFamilyIndexCount = 0; // Optional
+			swapChainCreateInfo.pQueueFamilyIndices = nullptr; // Optional
+		}
+		swapChain = vk::raii::SwapchainKHR( device, swapChainCreateInfo );
+		swapChainImages = swapChain.getImages();
+
+		this->swapChainImageFormat = swapChainSurfaceFormat.format;
+		this->swapChainExtent = swapChainExtent;
 	}
 
 	std::vector<const char *> Application::GetExtensions() {
@@ -357,5 +452,17 @@ namespace MVT {
 #else
 		return {};
 #endif
+	}
+
+	std::pair<int, int> Application::GetFramebufferSize() {
+		int width, height;
+		SDL_GetWindowSizeInPixels(m_Window, &width, &height);
+		return {width, height};
+	}
+
+	std::pair<int, int> Application::GetWindowSize() {
+		int width, height;
+		SDL_GetWindowSize(m_Window, &width, &height);
+		return {width, height};
 	}
 } // MVT

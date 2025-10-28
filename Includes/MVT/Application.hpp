@@ -48,6 +48,11 @@ namespace MVT {
 		uint32_t findQueueFamilies(vk::PhysicalDevice device, vk::QueueFlags queueType);
 		void createLogicalDevice();
 		void createSurface();
+		void createSwapChain();
+
+		vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
+		vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
+		vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
 
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
@@ -55,6 +60,8 @@ namespace MVT {
 		std::vector<const char*> GetExtensions();
 
 		vk::Flags<vk::InstanceCreateFlagBits> GetInstanceFlags();
+		std::pair<int, int> GetFramebufferSize();
+		std::pair<int, int> GetWindowSize();
 	private: // Window Specific
 		struct SDL_Window *m_Window{nullptr};
 		bool m_ShouldClose = false;
@@ -64,8 +71,14 @@ namespace MVT {
 		vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		vk::raii::Device device = nullptr;
+		uint32_t graphicsFamily;
 		vk::raii::Queue graphicsQueue = nullptr;
 		vk::raii::SurfaceKHR surface = nullptr;
+		uint32_t presentFamily;
 		vk::raii::Queue presentQueue = nullptr;
+		vk::raii::SwapchainKHR swapChain = nullptr;
+		std::vector<vk::Image> swapChainImages;
+		vk::Format swapChainImageFormat = vk::Format::eUndefined;
+		vk::Extent2D swapChainExtent;
 	};
 } // MVT
