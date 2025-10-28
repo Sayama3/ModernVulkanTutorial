@@ -13,6 +13,8 @@
 #include <utility>
 #include <algorithm>
 
+#include "MVT/SlangCompiler.hpp"
+
 namespace MVT {
 
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT* pCallbackData, void*) {
@@ -28,12 +30,11 @@ namespace MVT {
 		initVulkan("Modern Vulkan");
 	}
 
-	Application::~Application() {
-		cleanup();
-	}
+	Application::~Application() = default;
 
 	void Application::run() {
 		mainLoop();
+		cleanup();
 	}
 
 	void Application::initWindow(const char *appName, WindowParameters parameters) {
@@ -57,6 +58,8 @@ namespace MVT {
 		pickPhysicalDevice();
 		createLogicalDevice();
 		createSwapChain();
+		createSwapChainViews();
+		createGraphicsPipeline();
 	}
 
 	void Application::mainLoop() {
@@ -83,6 +86,13 @@ namespace MVT {
 	}
 
 	void Application::cleanup() {
+
+		graphicsPipeline.clear();
+
+		pipelineLayout.clear();
+
+		swapChainImageViews.clear();
+
 		swapChain.clear();
 
 		presentQueue.clear();
@@ -313,6 +323,11 @@ namespace MVT {
 			{.extendedDynamicState = true }   // Enable extended dynamic state from the extension
 		};
 
+		vk::PhysicalDeviceVulkan11Features features11 {
+			.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+			.shaderDrawParameters = true,
+		};
+
 		// Extensions needed for the application to work properly
 		std::vector<const char*> deviceExtensions = {
 			vk::KHRSwapchainExtensionName,
@@ -322,7 +337,7 @@ namespace MVT {
 		};
 
 		vk::DeviceCreateInfo deviceCreateInfo{
-			.pNext = &featureChain.get<vk::PhysicalDeviceFeatures2>(),
+			.pNext = &features11,
 			.queueCreateInfoCount = static_cast<uint32_t>(deviceQueueCreateInfos.size()),
 			.pQueueCreateInfos = deviceQueueCreateInfos.data(),
 			.enabledExtensionCount = static_cast<uint32_t>(deviceExtensions.size()),
@@ -344,42 +359,6 @@ namespace MVT {
 		}
 
 		surface = {instance, tmpSurface, nullptr};
-	}
-
-	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
-		for (const auto& availableFormat : availableFormats) {
-			if (availableFormat.format == vk::Format::eB8G8R8A8Srgb && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
-				return availableFormat;
-			}
-		}
-
-		// Backup, the first one should be good enough for my use case if I don't have what I want.
-		return availableFormats[0];
-	}
-
-	vk::PresentModeKHR Application::chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
-		// Target PC where energy is not a concern, Mailbox is better if available
-		for (const auto& availablePresentMode : availablePresentModes) {
-			if (availablePresentMode == vk::PresentModeKHR::eMailbox) {
-				return availablePresentMode;
-			}
-		}
-
-		// Backup, Guaranteed to be available
-		return vk::PresentModeKHR::eFifo;
-	}
-
-	vk::Extent2D Application::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
-		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
-			return capabilities.currentExtent;
-		}
-
-		const auto [width, height] = GetFramebufferSize();
-
-		return {
-			std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
-			std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
-		};
 	}
 
 	void Application::createSwapChain() {
@@ -424,6 +403,126 @@ namespace MVT {
 
 		this->swapChainImageFormat = swapChainSurfaceFormat.format;
 		this->swapChainExtent = swapChainExtent;
+	}
+
+	void Application::createSwapChainViews() {
+		swapChainImageViews.clear();
+
+		vk::ImageViewCreateInfo imageViewCreateInfo{
+			.viewType = vk::ImageViewType::e2D,
+			.format = swapChainImageFormat,
+			.subresourceRange = { vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1 }
+		};
+
+		for (vk::Image image : swapChainImages) {
+			imageViewCreateInfo.image = image;
+			swapChainImageViews.emplace_back( device, imageViewCreateInfo );
+		}
+	}
+
+	void Application::createGraphicsPipeline(){
+		//Basic code, we could upgrade it with an all-in-one function that seatch and find every function name in the slang shader available.
+
+		auto spirvCode = SlangCompiler::s_Compile("initial");
+		auto shaderModule = createShaderModule(spirvCode.value());
+
+		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{ .stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule,  .pName = "vertMain" };
+		vk::PipelineShaderStageCreateInfo fragShaderStageInfo{ .stage = vk::ShaderStageFlagBits::eFragment, .module = shaderModule, .pName = "fragMain" };
+
+		std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {vertShaderStageInfo, fragShaderStageInfo};
+
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{  .topology = vk::PrimitiveTopology::eTriangleList };
+		vk::PipelineViewportStateCreateInfo viewportState{ .viewportCount = 1, .scissorCount = 1 };
+
+		vk::PipelineRasterizationStateCreateInfo rasterizer{  .depthClampEnable = vk::False, .rasterizerDiscardEnable = vk::False,
+															  .polygonMode = vk::PolygonMode::eFill, .cullMode = vk::CullModeFlagBits::eBack,
+															  .frontFace = vk::FrontFace::eClockwise, .depthBiasEnable = vk::False,
+															  .depthBiasSlopeFactor = 1.0f, .lineWidth = 1.0f };
+
+		vk::PipelineMultisampleStateCreateInfo multisampling{.rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False};
+
+		vk::PipelineColorBlendAttachmentState colorBlendAttachment {
+			.blendEnable = vk::True,
+			.srcColorBlendFactor = vk::BlendFactor::eSrcAlpha,
+			.dstColorBlendFactor = vk::BlendFactor::eOneMinusSrcAlpha,
+			.colorBlendOp = vk::BlendOp::eAdd,
+			.srcAlphaBlendFactor = vk::BlendFactor::eOne,
+			.dstAlphaBlendFactor = vk::BlendFactor::eZero,
+			.alphaBlendOp = vk::BlendOp::eAdd,
+			.colorWriteMask = vk::ColorComponentFlagBits::eR | vk::ColorComponentFlagBits::eG | vk::ColorComponentFlagBits::eB | vk::ColorComponentFlagBits::eA,
+		};
+
+		vk::PipelineColorBlendStateCreateInfo colorBlending{.logicOpEnable = vk::False, .logicOp =  vk::LogicOp::eCopy, .attachmentCount = 1, .pAttachments =  &colorBlendAttachment };
+
+		std::vector dynamicStates = {
+			vk::DynamicState::eViewport,
+			vk::DynamicState::eScissor
+		};
+
+		vk::PipelineDynamicStateCreateInfo dynamicState{ .dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()), .pDynamicStates = dynamicStates.data() };
+
+		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{  .setLayoutCount = 0, .pushConstantRangeCount = 0 };
+
+		pipelineLayout = vk::raii::PipelineLayout( device, pipelineLayoutInfo );
+
+		vk::PipelineRenderingCreateInfo pipelineRenderingCreateInfo{ .colorAttachmentCount = 1, .pColorAttachmentFormats = &swapChainImageFormat };
+
+		vk::GraphicsPipelineCreateInfo pipelineInfo{
+			.pNext = &pipelineRenderingCreateInfo,
+			.stageCount = shaderStages.size(), .pStages = shaderStages.data(),
+			.pVertexInputState = &vertexInputInfo, .pInputAssemblyState = &inputAssembly,
+			.pViewportState = &viewportState, .pRasterizationState = &rasterizer,
+			.pMultisampleState = &multisampling, .pColorBlendState = &colorBlending,
+			.pDynamicState = &dynamicState, .layout = pipelineLayout, .renderPass = nullptr,
+			.basePipelineHandle = VK_NULL_HANDLE, // Optional
+			.basePipelineIndex = -1 // Optional
+		};
+
+		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
+	}
+
+
+	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats) {
+		for (const auto& availableFormat : availableFormats) {
+			if (availableFormat.format == vk::Format::eB8G8R8A8Srgb && availableFormat.colorSpace == vk::ColorSpaceKHR::eSrgbNonlinear) {
+				return availableFormat;
+			}
+		}
+
+		// Backup, the first one should be good enough for my use case if I don't have what I want.
+		return availableFormats[0];
+	}
+
+	vk::PresentModeKHR Application::chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes) {
+		// Target PC where energy is not a concern, Mailbox is better if available
+		for (const auto& availablePresentMode : availablePresentModes) {
+			if (availablePresentMode == vk::PresentModeKHR::eMailbox) {
+				return availablePresentMode;
+			}
+		}
+
+		// Backup, Guaranteed to be available
+		return vk::PresentModeKHR::eFifo;
+	}
+
+	vk::Extent2D Application::chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities) {
+		if (capabilities.currentExtent.width != std::numeric_limits<uint32_t>::max()) {
+			return capabilities.currentExtent;
+		}
+
+		const auto [width, height] = GetFramebufferSize();
+
+		return {
+			std::clamp<uint32_t>(width, capabilities.minImageExtent.width, capabilities.maxImageExtent.width),
+			std::clamp<uint32_t>(height, capabilities.minImageExtent.height, capabilities.maxImageExtent.height)
+		};
+	}
+
+	vk::raii::ShaderModule Application::createShaderModule(const std::vector<char> &code) const {
+		vk::ShaderModuleCreateInfo createInfo{ .codeSize = code.size() * sizeof(char), .pCode = reinterpret_cast<const uint32_t*>(code.data()) };
+		vk::raii::ShaderModule shaderModule{ device, createInfo };
+		return std::move(shaderModule);
 	}
 
 	std::vector<const char *> Application::GetExtensions() {

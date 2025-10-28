@@ -21,9 +21,13 @@ namespace MVT {
 	public:
 		static Expected<std::vector<char>, std::string> s_Compile(const char* shaderName, const char* entryPoint);
 		static Expected<std::vector<char>, std::string> s_CompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+		static Expected<std::vector<char>, std::string> s_Compile(const char* shaderName);
+		static Expected<std::vector<char>, std::string> s_CompileByPath(const std::filesystem::path& shaderPath);
 
 		static Expected<std::vector<char>, std::string> s_OneShotCompile(const char* shaderName, const char* entryPoint);
 		static Expected<std::vector<char>, std::string> s_OneShotCompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
+		static Expected<std::vector<char>, std::string> s_OneShotCompile(const char* shaderName);
+		static Expected<std::vector<char>, std::string> s_OneShotCompileByPath(const std::filesystem::path& shaderPath);
 
 		static void ResetCompiler();
 	private:
@@ -40,10 +44,13 @@ namespace MVT {
 		Expected<std::vector<char>, std::string> Compile(const char* shaderName, const char* entryPoint);
 		Expected<std::vector<char>, std::string> CompileByPath(const std::filesystem::path& shaderPath, const char* entryPoint);
 
+		Expected<std::vector<char>, std::string> Compile(const char* shaderName);
+		Expected<std::vector<char>, std::string> CompileByPath(const std::filesystem::path &shaderPath);
 		static void AddPath(const std::filesystem::path &path);
 
 	private:
 		Expected<std::vector<char>, std::string> CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName, const char *entryPointName);
+		Expected<std::vector<char>, std::string> CompileModule(Slang::ComPtr<slang::IModule> slangModule, const char *moduleName);
 		void ReflectModule(slang::ProgramLayout* programLayout);
 	private:
 		Slang::ComPtr<slang::ISession>  m_Session = nullptr;

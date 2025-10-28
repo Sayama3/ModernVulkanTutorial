@@ -49,11 +49,13 @@ namespace MVT {
 		void createLogicalDevice();
 		void createSurface();
 		void createSwapChain();
+		void createSwapChainViews();
+		void createGraphicsPipeline();
 
 		vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR>& availableFormats);
 		vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR>& availablePresentModes);
 		vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR& capabilities);
-
+		[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char>& code) const;
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
 		/// @return Necessary Extensions
@@ -76,9 +78,13 @@ namespace MVT {
 		vk::raii::SurfaceKHR surface = nullptr;
 		uint32_t presentFamily;
 		vk::raii::Queue presentQueue = nullptr;
-		vk::raii::SwapchainKHR swapChain = nullptr;
-		std::vector<vk::Image> swapChainImages;
 		vk::Format swapChainImageFormat = vk::Format::eUndefined;
 		vk::Extent2D swapChainExtent;
+		vk::raii::SwapchainKHR swapChain = nullptr;
+		std::vector<vk::Image> swapChainImages;
+		std::vector<vk::raii::ImageView> swapChainImageViews;
+		vk::raii::PipelineLayout pipelineLayout = nullptr;
+		vk::raii::Pipeline graphicsPipeline = nullptr;
+
 	};
 } // MVT
