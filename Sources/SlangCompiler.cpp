@@ -36,13 +36,13 @@ namespace MVT {
 		return std::nullopt;
 	}
 
-	void diagnoseIfNeeded(Slang::ComPtr<slang::IBlob> diagnosticsBlob, const char* preMsg = "Slang Diag ERR: ", const char* postMsg = "") {
+	void diagnoseIfNeeded(Slang::ComPtr<slang::IBlob> diagnosticsBlob, const char *preMsg = "Slang Diag ERR: ", const char *postMsg = "") {
 		if (diagnosticsBlob != nullptr) {
 			std::cerr << preMsg << (const char *) diagnosticsBlob->getBufferPointer() << postMsg << std::endl;
 		}
 	}
 
-	void diagnoseIfNeeded(slang::IBlob *diagnosticsBlob, const char* preMsg = "Slang Diag ERR: ", const char* postMsg = "") {
+	void diagnoseIfNeeded(slang::IBlob *diagnosticsBlob, const char *preMsg = "Slang Diag ERR: ", const char *postMsg = "") {
 		if (diagnosticsBlob != nullptr) {
 			std::cerr << preMsg << (const char *) diagnosticsBlob->getBufferPointer() << postMsg << std::endl;
 		}
@@ -87,7 +87,7 @@ namespace MVT {
 		return s_MainCompiler->Compile(shaderName, entryPoint);
 	}
 
-	Expected<std::vector<char>, std::string> SlangCompiler::s_CompileByPath(const std::filesystem::path & shaderPath, const char *entryPoint) {
+	Expected<std::vector<char>, std::string> SlangCompiler::s_CompileByPath(const std::filesystem::path &shaderPath, const char *entryPoint) {
 		return s_MainCompiler->CompileByPath(shaderPath, entryPoint);
 	}
 
@@ -153,7 +153,7 @@ namespace MVT {
 		m_SessionDescription.compilerOptionEntryCount = options.size();
 
 		const uint32_t count = s_SearchPaths.size();
-		std::vector<const char*> searchPaths{count};
+		std::vector<const char *> searchPaths{count};
 		for (uint32_t i = 0; i < count; ++i) {
 			searchPaths[i] = s_SearchPaths[i].c_str();
 		}
@@ -341,8 +341,13 @@ namespace MVT {
 		}
 
 		Slang::ComPtr<slang::IEntryPoint> entryPoint;
-		const auto epRes = slangModule->findEntryPointByName(entryPointName, entryPoint.writeRef());
-		{ SlangResult _res = epRes; if (((_res) < 0)) { std::string message = std::format("Slang ERR: Error getting entry point {} in module {}", entryPointName, moduleName); return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } }
+		const auto epRes = slangModule->findEntryPointByName(entryPointName, entryPoint.writeRef()); {
+			SlangResult _res = epRes;
+			if (((_res) < 0)) {
+				std::string message = std::format("Slang ERR: Error getting entry point {} in module {}", entryPointName, moduleName);
+				return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+			}
+		}
 		// MVT_SLANG_RETURN_ON_FAIL(epRes)
 
 		// For the reflection
@@ -361,8 +366,13 @@ namespace MVT {
 				componentTypes.size(),
 				composedProgram.writeRef(),
 				diagnosticsBlob.writeRef());
-			diagnoseIfNeeded(diagnosticsBlob);
-			{ SlangResult _res = result; if (((_res) < 0)) { std::string message = "Slang ERR: Failed to create a composite component."; return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } };
+			diagnoseIfNeeded(diagnosticsBlob); {
+				SlangResult _res = result;
+				if (((_res) < 0)) {
+					std::string message = "Slang ERR: Failed to create a composite component.";
+					return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+				}
+			};
 			// MVT_SLANG_RETURN_ON_FAIL(result);
 		}
 
@@ -371,23 +381,31 @@ namespace MVT {
 			SlangResult result = composedProgram->link(
 				linkedProgram.writeRef(),
 				diagnosticsBlob.writeRef());
-			diagnoseIfNeeded(diagnosticsBlob);
-			{ SlangResult _res = result; if (((_res) < 0)) { std::string message = "Slang ERR: Failed to link the program."; return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } };
+			diagnoseIfNeeded(diagnosticsBlob); {
+				SlangResult _res = result;
+				if (((_res) < 0)) {
+					std::string message = "Slang ERR: Failed to link the program.";
+					return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+				}
+			};
 			// MVT_SLANG_RETURN_ON_FAIL(result);
 		}
 
 
-		Slang::ComPtr<slang::IBlob> spirvCode;
-
-		{
+		Slang::ComPtr<slang::IBlob> spirvCode; {
 			Slang::ComPtr<slang::IBlob> diagnosticsBlob;
 			SlangResult result = linkedProgram->getEntryPointCode(
 				0, // entryPointIndex
 				0, // targetIndex
 				spirvCode.writeRef(),
 				diagnosticsBlob.writeRef());
-			diagnoseIfNeeded(diagnosticsBlob);
-			{ SlangResult _res = result; if (((_res) < 0)) { std::string message = "Slang ERR: Failed to fetch the SpirV code."; return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } };
+			diagnoseIfNeeded(diagnosticsBlob); {
+				SlangResult _res = result;
+				if (((_res) < 0)) {
+					std::string message = "Slang ERR: Failed to fetch the SpirV code.";
+					return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+				}
+			};
 			MVT_SLANG_RETURN_ON_FAIL(result);
 		}
 
@@ -412,22 +430,30 @@ namespace MVT {
 			SlangResult result = slangModule->link(
 				linkedProgram.writeRef(),
 				diagnosticsBlob.writeRef());
-			diagnoseIfNeeded(diagnosticsBlob);
-			{ SlangResult _res = result; if (((_res) < 0)) { std::string message = "Slang ERR: Failed to link the program."; return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } };
+			diagnoseIfNeeded(diagnosticsBlob); {
+				SlangResult _res = result;
+				if (((_res) < 0)) {
+					std::string message = "Slang ERR: Failed to link the program.";
+					return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+				}
+			};
 			// MVT_SLANG_RETURN_ON_FAIL(result);
 		}
 
 
-		Slang::ComPtr<slang::IBlob> spirvCode;
-
-		{
+		Slang::ComPtr<slang::IBlob> spirvCode; {
 			Slang::ComPtr<slang::IBlob> diagnosticsBlob;
 			SlangResult result = linkedProgram->getTargetCode(
 				0, // targetIndex
 				spirvCode.writeRef(),
 				diagnosticsBlob.writeRef());
-			diagnoseIfNeeded(diagnosticsBlob);
-			{ SlangResult _res = result; if (((_res) < 0)) { std::string message = "Slang ERR: Failed to fetch the SpirV code."; return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message)); } };
+			diagnoseIfNeeded(diagnosticsBlob); {
+				SlangResult _res = result;
+				if (((_res) < 0)) {
+					std::string message = "Slang ERR: Failed to fetch the SpirV code.";
+					return MVT::Expected<std::vector<char>, std::string>::unexpected(std::move(message));
+				}
+			};
 			MVT_SLANG_RETURN_ON_FAIL(result);
 		}
 
