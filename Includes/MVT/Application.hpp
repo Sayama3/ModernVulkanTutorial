@@ -44,7 +44,10 @@ namespace MVT {
 
 		void cleanup();
 
-	private: // Vulkan Specific
+	private: // High Level Vulkan Specific
+		void drawDrame();
+
+	private: // Low Level Vulkan Specific
 		void createInstance(const char *appName);
 
 		void setupDebugMessenger();
@@ -64,6 +67,16 @@ namespace MVT {
 		void createSwapChainViews();
 
 		void createGraphicsPipeline();
+
+		void createCommandPool();
+
+		void createCommandBuffer();
+
+		void createSyncObjects();
+
+		void recordCommandBuffer(uint32_t imageIndex);
+
+		void transition_image_layout(uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask);
 
 		vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
 
@@ -106,5 +119,11 @@ namespace MVT {
 		std::vector<vk::raii::ImageView> swapChainImageViews;
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
+		vk::raii::CommandPool commandPool = nullptr;
+		vk::raii::CommandBuffer commandBuffer = nullptr;
+
+		vk::raii::Semaphore presentCompleteSemaphore = nullptr;
+		vk::raii::Semaphore renderFinishedSemaphore = nullptr;
+		vk::raii::Fence drawFence = nullptr;
 	};
 } // MVT
