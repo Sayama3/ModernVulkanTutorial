@@ -14,6 +14,7 @@
     </libraryRoots>
     <excludeRoots>
       <file path="$PROJECT_DIR$/CMake" />
+      <file path="$PROJECT_DIR$/README" />
       <file path="$PROJECT_DIR$/build" />
     </excludeRoots>
   </component>
