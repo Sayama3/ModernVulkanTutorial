@@ -81,15 +81,18 @@ namespace MVT {
 						case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
 						case SDL_EVENT_WINDOW_METAL_VIEW_RESIZED: {
 							framebufferResized = true;
+							windowMinimized = e.window.data1 == 0 || e.window.data2 == 0;
 						}
 						break;
 						case SDL_EVENT_WINDOW_MINIMIZED: {
 							windowMinimized = true;
+							framebufferResized = true;
 						}
 						break;
 						case SDL_EVENT_WINDOW_RESTORED:
 						case SDL_EVENT_WINDOW_MAXIMIZED: {
 							windowMinimized = true;
+							framebufferResized = true;
 						}
 						break;
 						default: {
@@ -102,6 +105,9 @@ namespace MVT {
 			if (!windowMinimized) {
 				// Rest of the code
 				drawDrame(currentFrame);
+			} else {
+				device.waitIdle();
+				// recreateSwapChain();
 			}
 		}
 	}
@@ -156,6 +162,10 @@ namespace MVT {
 			case vk::Result::eSuccess: {
 				break;
 			}
+			case vk::Result::eSuboptimalKHR: {
+				framebufferResized = true;
+				break;
+			}
 			case vk::Result::eErrorOutOfDateKHR: {
 				recreateSwapChain();
 				break;
@@ -191,6 +201,7 @@ namespace MVT {
 			.pResults = nullptr,
 		};
 		result = presentQueue.presentKHR(presentInfoKHR);
+
 		switch (result) {
 			case vk::Result::eSuccess:
 				break;
@@ -457,6 +468,10 @@ namespace MVT {
 
 		auto swapChainSurfaceFormat = chooseSwapSurfaceFormat(availableFormats);
 		auto swapChainExtent = chooseSwapExtent(surfaceCapabilities);
+
+		assert(swapChainExtent.width > 0 && swapChainExtent.height > 0);
+		swapChainExtent.width = std::max(swapChainExtent.width, 1u);
+		swapChainExtent.height = std::max(swapChainExtent.height, 1u);
 
 		auto minImageCount = std::max(3u, surfaceCapabilities.minImageCount);
 		minImageCount = (surfaceCapabilities.maxImageCount > 0 && minImageCount > surfaceCapabilities.maxImageCount) ? surfaceCapabilities.maxImageCount : minImageCount;
