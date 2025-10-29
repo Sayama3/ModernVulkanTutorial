@@ -36,8 +36,7 @@ namespace MVT {
 		void run();
 
 	private:
-		void initWindow(const char *windowName, WindowParameters parameters = {1600, 900, false});
-
+		void initWindow(const char *windowName, WindowParameters parameters = {1600, 900, true});
 
 		void initVulkan(const char *appName);
 
@@ -87,6 +86,10 @@ namespace MVT {
 
 		[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const;
 
+		void cleanupSwapChain();
+
+		void recreateSwapChain();
+
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
 		/// @return Necessary Extensions
@@ -121,6 +124,9 @@ namespace MVT {
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 		vk::raii::CommandPool commandPool = nullptr;
+
+		bool framebufferResized = false;
+		bool windowMinimized = false;
 
 		// Frame in Flights parameters
 		uint32_t semaphoreIndex{0};

@@ -65,18 +65,33 @@ namespace MVT {
 	}
 
 	void Application::mainLoop() {
-
 		while (!m_ShouldClose) {
 			// Handle SDL Events
 			{
 				SDL_Event e;
 				while (SDL_PollEvent(&e) != 0) {
 					// ImGui_ImplSDL3_ProcessEvent(&e);
-					if (e.type == SDL_EVENT_QUIT) {
-						m_ShouldClose = true;
-					}
 
 					switch (e.type) {
+						case SDL_EVENT_QUIT: {
+							m_ShouldClose = true;
+						}
+						break;
+
+						case SDL_EVENT_WINDOW_PIXEL_SIZE_CHANGED:
+						case SDL_EVENT_WINDOW_METAL_VIEW_RESIZED: {
+							framebufferResized = true;
+						}
+						break;
+						case SDL_EVENT_WINDOW_MINIMIZED: {
+							windowMinimized = true;
+						}
+						break;
+						case SDL_EVENT_WINDOW_RESTORED:
+						case SDL_EVENT_WINDOW_MAXIMIZED: {
+							windowMinimized = true;
+						}
+						break;
 						default: {
 							break;
 						};
@@ -84,13 +99,14 @@ namespace MVT {
 				}
 			}
 
-			// Rest of the code
-			drawDrame(currentFrame);
+			if (!windowMinimized) {
+				// Rest of the code
+				drawDrame(currentFrame);
+			}
 		}
 	}
 
 	void Application::cleanup() {
-
 		if (*device) {
 			device.waitIdle();
 		}
@@ -107,9 +123,7 @@ namespace MVT {
 
 		pipelineLayout.clear();
 
-		swapChainImageViews.clear();
-
-		swapChain.clear();
+		cleanupSwapChain();
 
 		presentQueue.clear();
 		graphicsQueue.clear();
@@ -133,18 +147,29 @@ namespace MVT {
 	}
 
 	void Application::drawDrame(uint32_t frame) {
-		while ( vk::Result::eTimeout == device.waitForFences( *inFlightFences[currentFrame], vk::True, UINT64_MAX ) ) {
+		while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX)) {
 			std::cerr << "Waiting for 'inFlightFences' timed out. Waiting again." << std::endl;
 		}
 
-		auto [result, imageIndex] = swapChain.acquireNextImage( UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr );
-		assert(result == vk::Result::eSuccess);
+		auto [result, imageIndex] = swapChain.acquireNextImage(UINT64_MAX, *presentCompleteSemaphores[semaphoreIndex], nullptr);
+		switch (result) {
+			case vk::Result::eSuccess: {
+				break;
+			}
+			case vk::Result::eErrorOutOfDateKHR: {
+				recreateSwapChain();
+				break;
+			}
+			default:
+				throw std::runtime_error("[Vulkan] Failed to acquire swap chain image!");
+				break;
+		}
 
-		device.resetFences(  *inFlightFences[currentFrame] );
-        commandBuffers[currentFrame].reset();
+		device.resetFences(*inFlightFences[currentFrame]);
+		commandBuffers[currentFrame].reset();
 		recordCommandBuffer(imageIndex);
 
-		vk::PipelineStageFlags waitDestinationStageMask( vk::PipelineStageFlagBits::eColorAttachmentOutput );
+		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo submitInfo{
 			.waitSemaphoreCount = 1,
 			.pWaitSemaphores = &*presentCompleteSemaphores[semaphoreIndex],
@@ -165,12 +190,22 @@ namespace MVT {
 			.pImageIndices = &imageIndex,
 			.pResults = nullptr,
 		};
-		result = presentQueue.presentKHR( presentInfoKHR );
-		switch ( result )
-		{
-			case vk::Result::eSuccess: break;
-			case vk::Result::eSuboptimalKHR: std::cerr << "vk::Queue::presentKHR returned vk::Result::eSuboptimalKHR !\n"; break;
-			default: break;  // an unexpected result is returned!
+		result = presentQueue.presentKHR(presentInfoKHR);
+		switch (result) {
+			case vk::Result::eSuccess:
+				break;
+			case vk::Result::eSuboptimalKHR:
+			case vk::Result::eErrorOutOfDateKHR: {
+				framebufferResized = true;
+				break;
+			}
+			default:
+				break; // an unexpected result is returned!
+		}
+
+		if (framebufferResized) {
+			framebufferResized = false;
+			recreateSwapChain();
 		}
 
 		semaphoreIndex = (semaphoreIndex + 1) % presentCompleteSemaphores.size();
@@ -223,15 +258,13 @@ namespace MVT {
 		// auto [instRes, inst] = context.createInstance(createInfo);
 		// assert(instRes == vk::Result::eSuccess);
 		// instance = std::move(inst);
-		instance = vk::raii::Instance(context, createInfo);
-
-		{
-		// 	auto [result, exts] = context.enumerateInstanceExtensionProperties();
-		// 	std::cout << "available extensions:\n";
+		instance = vk::raii::Instance(context, createInfo); {
+			// 	auto [result, exts] = context.enumerateInstanceExtensionProperties();
+			// 	std::cout << "available extensions:\n";
 			auto exts = context.enumerateInstanceExtensionProperties();
 			std::cout << "available vulkan extensions:\n";
 
-			for (const auto& extension : exts) {
+			for (const auto &extension: exts) {
 				std::cout << '\t' << extension.extensionName << '\n';
 			}
 			std::cout << std::endl;
@@ -434,8 +467,8 @@ namespace MVT {
 		}
 
 		vk::SwapchainCreateInfoKHR swapChainCreateInfo{
-			.flags = vk::SwapchainCreateFlagsKHR(), .
-			surface = surface,
+			.flags = vk::SwapchainCreateFlagsKHR(),
+			.surface = surface,
 			.minImageCount = minImageCount,
 			.imageFormat = swapChainSurfaceFormat.format, .imageColorSpace = swapChainSurfaceFormat.colorSpace,
 			.imageExtent = swapChainExtent, .imageArrayLayers = 1,
@@ -544,12 +577,12 @@ namespace MVT {
 	}
 
 	void Application::createCommandPool() {
-		vk::CommandPoolCreateInfo poolInfo{ .flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily };
+		vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
 		commandPool = vk::raii::CommandPool(device, poolInfo);
 	}
 
 	void Application::createCommandBuffer() {
-		vk::CommandBufferAllocateInfo allocInfo{ .commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT };
+		vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
 		commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
 	}
 
@@ -573,17 +606,17 @@ namespace MVT {
 
 
 	void Application::recordCommandBuffer(const uint32_t imageIndex) {
-		commandBuffers[currentFrame].begin( {} );
+		commandBuffers[currentFrame].begin({});
 
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 		transition_image_layout(
 			imageIndex,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
-			{},                                                     // srcAccessMask (no need to wait for previous operations)
-			vk::AccessFlagBits2::eColorAttachmentWrite,                // dstAccessMask
-			vk::PipelineStageFlagBits2::eTopOfPipe,                   // srcStage
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput        // dstStage
+			{}, // srcAccessMask (no need to wait for previous operations)
+			vk::AccessFlagBits2::eColorAttachmentWrite, // dstAccessMask
+			vk::PipelineStageFlagBits2::eTopOfPipe, // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput // dstStage
 		);
 
 		// Clear buffer with clear color
@@ -597,13 +630,11 @@ namespace MVT {
 		};
 
 		vk::RenderingInfo renderingInfo = {
-			.renderArea = { .offset = { 0, 0 }, .extent = swapChainExtent },
+			.renderArea = {.offset = {0, 0}, .extent = swapChainExtent},
 			.layerCount = 1,
 			.colorAttachmentCount = 1,
 			.pColorAttachments = &attachmentInfo
-		};
-
-		{
+		}; {
 			commandBuffers[currentFrame].beginRendering(renderingInfo);
 
 			commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
@@ -619,14 +650,15 @@ namespace MVT {
 			imageIndex,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::ePresentSrcKHR,
-			vk::AccessFlagBits2::eColorAttachmentWrite,                 // srcAccessMask
-			{},                                                      // dstAccessMask
-			vk::PipelineStageFlagBits2::eColorAttachmentOutput,        // srcStage
-			vk::PipelineStageFlagBits2::eBottomOfPipe                  // dstStage
+			vk::AccessFlagBits2::eColorAttachmentWrite, // srcAccessMask
+			{}, // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput, // srcStage
+			vk::PipelineStageFlagBits2::eBottomOfPipe // dstStage
 		);
 
 		commandBuffers[currentFrame].end();
 	}
+
 	void Application::transition_image_layout(
 		uint32_t imageIndex,
 		vk::ImageLayout oldLayout,
@@ -704,6 +736,21 @@ namespace MVT {
 		vk::ShaderModuleCreateInfo createInfo{.codeSize = code.size() * sizeof(char), .pCode = reinterpret_cast<const uint32_t *>(code.data())};
 		vk::raii::ShaderModule shaderModule{device, createInfo};
 		return std::move(shaderModule);
+	}
+
+	void Application::cleanupSwapChain() {
+		swapChainImageViews.clear();
+
+		swapChain = nullptr;
+	}
+
+	void Application::recreateSwapChain() {
+		device.waitIdle();
+
+		cleanupSwapChain();
+
+		createSwapChain();
+		createSwapChainViews();
 	}
 
 	std::vector<const char *> Application::GetExtensions() {
