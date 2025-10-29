@@ -17,6 +17,7 @@ namespace MVT {
 
 	class Application {
 	public: // Vulkan Specific
+		static inline constexpr int MAX_FRAMES_IN_FLIGHT = 2;
 		static inline const std::vector validationLayers = {
 			"VK_LAYER_KHRONOS_validation",
 		};
@@ -45,7 +46,7 @@ namespace MVT {
 		void cleanup();
 
 	private: // High Level Vulkan Specific
-		void drawDrame();
+		void drawDrame(uint32_t frame);
 
 	private: // Low Level Vulkan Specific
 		void createInstance(const char *appName);
@@ -120,10 +121,14 @@ namespace MVT {
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 		vk::raii::CommandPool commandPool = nullptr;
-		vk::raii::CommandBuffer commandBuffer = nullptr;
 
-		vk::raii::Semaphore presentCompleteSemaphore = nullptr;
-		vk::raii::Semaphore renderFinishedSemaphore = nullptr;
-		vk::raii::Fence drawFence = nullptr;
+		// Frame in Flights parameters
+		uint32_t semaphoreIndex{0};
+		uint32_t currentFrame{0};
+		std::vector<vk::raii::CommandBuffer> commandBuffers = {};
+		std::vector<vk::raii::Semaphore> presentCompleteSemaphores = {};
+		std::vector<vk::raii::Semaphore> renderFinishedSemaphores = {};
+		//std::vector<vk::raii::Fence> drawFences = {};
+		std::vector<vk::raii::Fence> inFlightFences;
 	};
 } // MVT
