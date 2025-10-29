@@ -65,6 +65,7 @@ namespace MVT {
 	}
 
 	void Application::mainLoop() {
+
 		while (!m_ShouldClose) {
 			// Handle SDL Events
 			{
@@ -132,7 +133,12 @@ namespace MVT {
 	}
 
 	void Application::drawDrame() {
+
+		//TODO: Find a better way to synchronize everything.
+		graphicsQueue.waitIdle();
+
 		auto [result, imageIndex] = swapChain.acquireNextImage( UINT64_MAX, *presentCompleteSemaphore, nullptr );
+		assert(result == vk::Result::eSuccess);
 
 		recordCommandBuffer(imageIndex);
 
@@ -156,6 +162,24 @@ namespace MVT {
 		// Waiting end of draw.
 		while ( vk::Result::eTimeout == device.waitForFences( *drawFence, vk::True, UINT64_MAX ) ) {
 			std::cerr << "Waiting for 'drawFence' timed out. Waiting again." << std::endl;
+		}
+
+		// const vk::PresentInfoKHR presentInfoKHR( **renderFinishedSemaphore, **swapChain, imageIndex );
+		const vk::PresentInfoKHR presentInfoKHR{
+			.waitSemaphoreCount = 1,
+			.pWaitSemaphores = &*renderFinishedSemaphore,
+			.swapchainCount = 1,
+			.pSwapchains = &*swapChain,
+			.pImageIndices = &imageIndex,
+			.pResults = nullptr,
+		};
+
+		result = presentQueue.presentKHR( presentInfoKHR );
+		switch ( result )
+		{
+			case vk::Result::eSuccess: break;
+			case vk::Result::eSuboptimalKHR: std::cerr << "vk::Queue::presentKHR returned vk::Result::eSuboptimalKHR !\n"; break;
+			default: break;  // an unexpected result is returned!
 		}
 	}
 
@@ -207,17 +231,17 @@ namespace MVT {
 		// instance = std::move(inst);
 		instance = vk::raii::Instance(context, createInfo);
 
-		// {
-		// // 	auto [result, exts] = context.enumerateInstanceExtensionProperties();
-		// // 	std::cout << "available extensions:\n";
-		// 	auto exts = context.enumerateInstanceExtensionProperties();
+		{
+		// 	auto [result, exts] = context.enumerateInstanceExtensionProperties();
 		// 	std::cout << "available extensions:\n";
-		//
-		// 	for (const auto& extension : exts) {
-		// 		std::cout << '\t' << extension.extensionName << '\n';
-		// 	}
-		// 	std::cout << std::endl;
-		// }
+			auto exts = context.enumerateInstanceExtensionProperties();
+			std::cout << "available vulkan extensions:\n";
+
+			for (const auto& extension : exts) {
+				std::cout << '\t' << extension.extensionName << '\n';
+			}
+			std::cout << std::endl;
+		}
 	}
 
 	void Application::setupDebugMessenger() {
@@ -557,7 +581,7 @@ namespace MVT {
 		);
 
 		// Clear buffer with clear color
-		vk::ClearValue clearColor = vk::ClearColorValue(0.3f, 0.1f, 0.05f, 1.0f);
+		vk::ClearValue clearColor = vk::ClearColorValue(0.0f, 0.0f, 0.0f, 1.0f);
 		vk::RenderingAttachmentInfo attachmentInfo = {
 			.imageView = swapChainImageViews[imageIndex],
 			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
