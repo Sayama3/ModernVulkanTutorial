@@ -4,9 +4,12 @@
 
 #pragma once
 
+#include <complex.h>
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
+
+#include "MVT/Mesh.hpp"
 
 namespace MVT {
 	struct WindowParameters {
@@ -45,7 +48,13 @@ namespace MVT {
 		void cleanup();
 
 	private: // High Level Vulkan Specific
-		void drawDrame(uint32_t frame);
+		void drawFrame();
+
+
+		template<class T>
+		static vk::VertexInputBindingDescription getBindingDescription(const uint32_t binding = 0) {
+			return {binding, sizeof(T), vk::VertexInputRate::eVertex};
+		}
 
 	private: // Low Level Vulkan Specific
 		void createInstance(const char *appName);
@@ -70,6 +79,8 @@ namespace MVT {
 
 		void createCommandPool();
 
+		void createVertexBuffer(const std::vector<Vertex> &vertices);
+
 		void createCommandBuffer();
 
 		void createSyncObjects();
@@ -85,6 +96,8 @@ namespace MVT {
 		vk::Extent2D chooseSwapExtent(const vk::SurfaceCapabilitiesKHR &capabilities);
 
 		[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const;
+
+		uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 
 		void cleanupSwapChain();
 
@@ -124,6 +137,8 @@ namespace MVT {
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 		vk::raii::CommandPool commandPool = nullptr;
+		vk::raii::Buffer vertexBuffer = nullptr;
+		vk::raii::DeviceMemory vertexBufferMemory = nullptr;
 
 		bool framebufferResized = false;
 		bool windowMinimized = false;

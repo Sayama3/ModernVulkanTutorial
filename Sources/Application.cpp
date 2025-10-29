@@ -13,6 +13,7 @@
 #include <utility>
 #include <algorithm>
 
+#include "MVT/Mesh.hpp"
 #include "MVT/SlangCompiler.hpp"
 
 namespace MVT {
@@ -59,7 +60,10 @@ namespace MVT {
 		createSwapChain();
 		createSwapChainViews();
 		createGraphicsPipeline();
+
 		createCommandPool();
+		createVertexBuffer(triangle);
+
 		createCommandBuffer();
 		createSyncObjects();
 	}
@@ -104,8 +108,9 @@ namespace MVT {
 
 			if (!windowMinimized) {
 				// Rest of the code
-				drawDrame(currentFrame);
-			} else {
+				drawFrame();
+			}
+			else {
 				device.waitIdle();
 				// recreateSwapChain();
 			}
@@ -123,6 +128,8 @@ namespace MVT {
 
 		commandBuffers.clear();
 
+		vertexBufferMemory.clear();
+		vertexBuffer.clear();
 		commandPool.clear();
 
 		graphicsPipeline.clear();
@@ -152,7 +159,7 @@ namespace MVT {
 		}
 	}
 
-	void Application::drawDrame(uint32_t frame) {
+	void Application::drawFrame() {
 		while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX)) {
 			std::cerr << "Waiting for 'inFlightFences' timed out. Waiting again." << std::endl;
 		}
@@ -530,7 +537,7 @@ namespace MVT {
 	void Application::createGraphicsPipeline() {
 		//Basic code, we could upgrade it with an all-in-one function that seatch and find every function name in the slang shader available.
 
-		auto spirvCode = SlangCompiler::s_Compile("initial");
+		auto spirvCode = SlangCompiler::s_Compile("mesh");
 		auto shaderModule = createShaderModule(spirvCode.value());
 
 		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain"};
@@ -538,7 +545,15 @@ namespace MVT {
 
 		std::array<vk::PipelineShaderStageCreateInfo, 2> shaderStages = {vertShaderStageInfo, fragShaderStageInfo};
 
-		vk::PipelineVertexInputStateCreateInfo vertexInputInfo;
+		auto bindingDescription = Vertex::getBindingDescription();
+		auto attributeDescriptions = Vertex::getAttributeDescriptions();
+		vk::PipelineVertexInputStateCreateInfo vertexInputInfo{
+			.vertexBindingDescriptionCount = 1,
+			.pVertexBindingDescriptions = &bindingDescription,
+			.vertexAttributeDescriptionCount = attributeDescriptions.size(),
+			.pVertexAttributeDescriptions = attributeDescriptions.data()
+		};
+
 		vk::PipelineInputAssemblyStateCreateInfo inputAssembly{.topology = vk::PrimitiveTopology::eTriangleList};
 		vk::PipelineViewportStateCreateInfo viewportState{.viewportCount = 1, .scissorCount = 1};
 
@@ -594,6 +609,29 @@ namespace MVT {
 	void Application::createCommandPool() {
 		vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
 		commandPool = vk::raii::CommandPool(device, poolInfo);
+	}
+
+	void Application::createVertexBuffer(const std::vector<Vertex>& vertices) {
+		vk::BufferCreateInfo bufferInfo{
+			.size = sizeof(vertices.at(0)) * vertices.size(),
+			.usage = vk::BufferUsageFlagBits::eVertexBuffer,
+			.sharingMode = vk::SharingMode::eExclusive
+		};
+
+		vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+
+		vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
+		vk::MemoryAllocateInfo memoryAllocateInfo{
+			.allocationSize = memRequirements.size,
+			.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
+		};
+
+		vertexBufferMemory = vk::raii::DeviceMemory( device, memoryAllocateInfo );
+		vertexBuffer.bindMemory( *vertexBufferMemory, 0 );
+
+		void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
+		memcpy(data, vertices.data(), bufferInfo.size);
+		vertexBufferMemory.unmapMemory();
 	}
 
 	void Application::createCommandBuffer() {
@@ -655,6 +693,8 @@ namespace MVT {
 			commandBuffers[currentFrame].bindPipeline(vk::PipelineBindPoint::eGraphics, graphicsPipeline);
 			commandBuffers[currentFrame].setViewport(0, vk::Viewport(0.0f, 0.0f, static_cast<float>(swapChainExtent.width), static_cast<float>(swapChainExtent.height), 0.0f, 1.0f));
 			commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
+
+			commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
 			commandBuffers[currentFrame].draw(3, 1, 0, 0);
 
 			commandBuffers[currentFrame].endRendering();
@@ -751,6 +791,18 @@ namespace MVT {
 		vk::ShaderModuleCreateInfo createInfo{.codeSize = code.size() * sizeof(char), .pCode = reinterpret_cast<const uint32_t *>(code.data())};
 		vk::raii::ShaderModule shaderModule{device, createInfo};
 		return std::move(shaderModule);
+	}
+
+	uint32_t Application::findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties) {
+		vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
+
+		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
+			if ((typeFilter & (1 << i))&& (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+				return i;
+			}
+		}
+
+		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
 	void Application::cleanupSwapChain() {

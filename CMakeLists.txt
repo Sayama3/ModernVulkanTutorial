@@ -66,6 +66,9 @@ set(SOURCES
 		Sources/SlangCompiler.cpp
 		Includes/MVT/SlangCompiler.hpp
 		Includes/MVT/Expected.hpp
+		Includes/MVT/GLM.hpp
+		Includes/MVT/Mesh.cpp
+		Includes/MVT/Mesh.hpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
