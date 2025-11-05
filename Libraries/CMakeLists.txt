@@ -51,13 +51,13 @@ FetchContent_Declare(SDL3
 		GIT_TAG "release-3.2.24"
 )
 
-#set(VMA_BUILD_SAMPLES OFF)
-#set(VMA_BUILD_DOCUMENTATION OFF)
-#set(VMA_ENABLE_INSTALL OFF)
-#FetchContent_Declare(VulkanMemoryAllocator
-#		GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
-#		GIT_TAG "v3.3.0"
-#)
+set(VMA_BUILD_SAMPLES OFF)
+set(VMA_BUILD_DOCUMENTATION OFF)
+set(VMA_ENABLE_INSTALL OFF)
+FetchContent_Declare(VulkanMemoryAllocator
+		GIT_REPOSITORY "https://github.com/GPUOpen-LibrariesAndSDKs/VulkanMemoryAllocator"
+		GIT_TAG "v3.3.0"
+)
 
 
 set(IMGUI_STDLIB ON)
@@ -88,7 +88,7 @@ FetchContent_Declare(slang
 
 set(SLANG_OVERRIDE_IMGUI_PATH "${IMGUI_PARENT_DIR}" CACHE PATH "" FORCE)
 
-FetchContent_MakeAvailable(glm xxHash Spdlog Assimp SDL3 TinyObjLoader slang)
+FetchContent_MakeAvailable(glm xxHash Spdlog Assimp SDL3 TinyObjLoader slang VulkanMemoryAllocator)
 
 target_link_libraries(imgui PUBLIC SDL3::SDL3)
 target_link_libraries(imgui PUBLIC Vulkan::Vulkan)

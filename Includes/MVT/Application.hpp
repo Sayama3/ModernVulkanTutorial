@@ -101,7 +101,21 @@ namespace MVT {
 
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory);
 
+		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory, const std::vector<uint32_t> &families);
+
+
+		template<uint64_t count>
+		inline void createVertexBuffer(const std::array<Vertex, count>& vertices) {
+			createVertexBuffer(vertices.data(), count);
+		}
+
 		void createVertexBuffer(const std::vector<Vertex> &vertices);
+		void createVertexBuffer(const Vertex *vertices, uint64_t count);
+
+		template<uint64_t count>
+		void createIndexBuffer(const std::array<uint32_t, count> &indices) {createIndexBuffer( indices.data(), indices.size()); }
+		void createIndexBuffer(const std::vector<uint32_t> &indices) {createIndexBuffer( indices.data(), indices.size()); }
+		void createIndexBuffer(const uint32_t *indices, uint32_t count);
 
 		void createCommandBuffer();
 
@@ -172,8 +186,12 @@ namespace MVT {
 		vk::raii::Fence transferFence = nullptr;
 
 		vk::raii::CommandPool commandPool = nullptr;
+
 		vk::raii::Buffer vertexBuffer = nullptr;
 		vk::raii::DeviceMemory vertexBufferMemory = nullptr;
+
+		vk::raii::Buffer indexBuffer = nullptr;
+		vk::raii::DeviceMemory indexBufferMemory = nullptr;
 
 		bool framebufferResized = false;
 		bool windowMinimized = false;

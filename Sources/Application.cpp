@@ -65,7 +65,9 @@ namespace MVT {
 		createCommandBuffer();
 		createSyncObjects();
 
-		createVertexBuffer(triangle);
+		createVertexBuffer(rectangle_vertices);
+		createIndexBuffer(rectangle_indices);
+
 
 	}
 
@@ -122,6 +124,9 @@ namespace MVT {
 		if (*device) {
 			device.waitIdle();
 		}
+
+		indexBufferMemory.clear();
+		indexBuffer.clear();
 
 		vertexBufferMemory.clear();
 		vertexBuffer.clear();
@@ -640,11 +645,16 @@ namespace MVT {
 	}
 
 	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory) {
-		const std::array families = {graphicsFamily, transferFamily};
+		createBuffer(size, usage, properties, buffer, bufferMemory, {graphicsFamily});
+	}
+
+	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory, const std::vector<uint32_t>& families) {
+		// const std::array families = {graphicsFamily, transferFamily};
+
 		vk::BufferCreateInfo bufferInfo{
 			.size = size,
 			.usage = usage,
-			.sharingMode = vk::SharingMode::eConcurrent,
+			.sharingMode = families.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
 			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
 			.pQueueFamilyIndices = families.data()
 		};
@@ -657,6 +667,10 @@ namespace MVT {
 	}
 
 	void Application::createVertexBuffer(const std::vector<Vertex>& vertices) {
+		createVertexBuffer(vertices.data(), vertices.size());
+	}
+
+	void Application::createVertexBuffer(const Vertex* vertices, const uint64_t count) {
 		const std::array families = {graphicsFamily, transferFamily};
 
 		// vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -665,7 +679,7 @@ namespace MVT {
 		// memcpy(data, vertices.data(), bufferSize);
 		// vertexBufferMemory.unmapMemory();
 
-		vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+		vk::DeviceSize bufferSize = sizeof(Vertex) * count;
 
 		vk::BufferCreateInfo stagingInfo{ .size = bufferSize, .usage = vk::BufferUsageFlagBits::eTransferSrc, .sharingMode = vk::SharingMode::eExclusive };
 		vk::raii::Buffer stagingBuffer(device, stagingInfo);
@@ -675,7 +689,7 @@ namespace MVT {
 
 		stagingBuffer.bindMemory(stagingBufferMemory, 0);
 		void* dataStaging = stagingBufferMemory.mapMemory(0, stagingInfo.size);
-		memcpy(dataStaging, vertices.data(), stagingInfo.size);
+		memcpy(dataStaging, vertices, stagingInfo.size);
 		stagingBufferMemory.unmapMemory();
 
 		vk::BufferCreateInfo bufferInfo{ .size = bufferSize,  .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, .sharingMode = vk::SharingMode::eConcurrent, .queueFamilyIndexCount = families.size(), .pQueueFamilyIndices = families.data() };
@@ -691,6 +705,29 @@ namespace MVT {
 
 		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
 		assert(result == vk::Result::eSuccess);
+		device.resetFences(*transferFence);
+	}
+
+	void Application::createIndexBuffer(const uint32_t *indices, const uint32_t count) {
+
+		vk::DeviceSize bufferSize = sizeof(indices[0]) * count;
+
+		vk::raii::Buffer stagingBuffer({});
+		vk::raii::DeviceMemory stagingBufferMemory({});
+
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
+
+		void* data = stagingBufferMemory.mapMemory(0, bufferSize);
+		memcpy(data, indices, (size_t) bufferSize);
+		stagingBufferMemory.unmapMemory();
+
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer, indexBufferMemory, {graphicsFamily, transferFamily});
+
+		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence);
+
+		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
+		assert(result == vk::Result::eSuccess);
+		device.resetFences(*transferFence);
 	}
 
 	void Application::createCommandBuffer() {
@@ -727,7 +764,6 @@ namespace MVT {
 
 		transferFence = {device, vk::FenceCreateInfo{}};
 	}
-
 
 	void Application::recordCommandBuffer(const uint32_t imageIndex) {
 		commandBuffers[currentFrame].begin({});
@@ -766,7 +802,9 @@ namespace MVT {
 			commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
 			commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
-			commandBuffers[currentFrame].draw(3, 1, 0, 0);
+			commandBuffers[currentFrame].bindIndexBuffer( *indexBuffer, 0, vk::IndexType::eUint32 );
+
+			commandBuffers[currentFrame].drawIndexed(rectangle_indices.size(), 1, 0, 0, 0);
 
 			commandBuffers[currentFrame].endRendering();
 		}
