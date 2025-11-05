@@ -8,8 +8,10 @@
 #include <SDL3/SDL.h>
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
+#include <vk_mem_alloc.h>
 
 #include "MVT/Mesh.hpp"
+#include "MVT/VulkanMemoryAllocator.hpp"
 
 namespace MVT {
 	struct WindowParameters {
@@ -89,6 +91,10 @@ namespace MVT {
 		}
 		void createLogicalDevice();
 
+		void createVMA();
+
+		void cleanupVMA();
+
 		void createSurface();
 
 		void createSwapChain();
@@ -162,6 +168,8 @@ namespace MVT {
 		vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		vk::raii::Device device = nullptr;
+
+		VulkanMemoryAllocatorPtr vma;
 
 		uint32_t graphicsFamily{};
 		vk::raii::Queue graphicsQueue = nullptr;

@@ -15,6 +15,9 @@
 
 #include "MVT/Mesh.hpp"
 #include "MVT/SlangCompiler.hpp"
+#include "MVT/VulkanMesh.hpp"
+
+#define MVT_ALIGN_SIZE(size, alignement) (size % alignment == 0 ? size : ((size / alignment) + 1) * alignment)
 
 namespace MVT {
 	static VKAPI_ATTR vk::Bool32 VKAPI_CALL debugCallback(vk::DebugUtilsMessageSeverityFlagBitsEXT severity, vk::DebugUtilsMessageTypeFlagsEXT type, const vk::DebugUtilsMessengerCallbackDataEXT *pCallbackData, void *) {
@@ -57,6 +60,8 @@ namespace MVT {
 		createSurface();
 		pickPhysicalDevice();
 		createLogicalDevice();
+		createVMA();
+
 		createSwapChain();
 		createSwapChainViews();
 		createGraphicsPipeline();
@@ -151,6 +156,8 @@ namespace MVT {
 		transferQueue.clear();
 		presentQueue.clear();
 		graphicsQueue.clear();
+
+		cleanupVMA();
 
 		device.clear();
 
@@ -482,6 +489,14 @@ namespace MVT {
 		transferQueue = vk::raii::Queue(device, transferFamily, 0);
 	}
 
+	void Application::createVMA() {
+		vma = std::make_unique<VulkanMemoryAllocator>(instance, physicalDevice, device);
+	}
+
+	void Application::cleanupVMA() {
+		vma.reset();
+	}
+
 	void Application::createSurface() {
 		VkSurfaceKHR tmpSurface;
 		const bool result = SDL_Vulkan_CreateSurface(m_Window, *instance, nullptr, &tmpSurface);
@@ -728,6 +743,54 @@ namespace MVT {
 		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
 		assert(result == vk::Result::eSuccess);
 		device.resetFences(*transferFence);
+	}
+
+	VulkanMesh Application::createVulkanMesh(vk::raii::Device& device, const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount, const uint32_t graphicsFamily, const uint32_t transferFamily) {
+
+		const uint64_t sizeVertices = sizeof(*vertex) * vCount;
+		const uint64_t sizeIndices = sizeof(*indices) * iCount;
+
+		const uint64_t offsetVertices = 0;
+		const uint64_t offsetIndices = sizeof(*vertex) * vCount;
+
+		const vk::DeviceSize bufferSize = sizeVertices + sizeIndices;
+
+		const std::vector<uint32_t> families = graphicsFamily != transferFamily ? std::vector<uint32_t>{graphicsFamily, transferFamily} : std::vector<uint32_t>{graphicsFamily};
+
+		vk::BufferCreateInfo vBufferInfo{
+			.size = sizeVertices,
+			.usage = vk::BufferUsageFlagBits::eVertexBuffer,
+			.sharingMode = families.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
+			.pQueueFamilyIndices = families.data()
+		};
+
+		vk::BufferCreateInfo iBufferInfo{
+			.size = sizeIndices,
+			.usage = vk::BufferUsageFlagBits::eIndexBuffer,
+			.sharingMode = families.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
+			.pQueueFamilyIndices = families.data()
+		};
+
+		vk::raii::Buffer vertexBuffer = vk::raii::Buffer(device, vBufferInfo);
+		vk::raii::Buffer indexBuffer = vk::raii::Buffer(device, iBufferInfo);
+
+		const vk::MemoryRequirements vMemRequirements = vertexBuffer.getMemoryRequirements();
+		const vk::MemoryRequirements iMemRequirements = indexBuffer.getMemoryRequirements();
+
+		const vk::DeviceSize alignment = std::max(vMemRequirements.alignment, iMemRequirements.alignment);
+
+		const vk::DeviceSize offsetIndex = MVT_ALIGN_SIZE(vMemRequirements.size, alignment);
+		const vk::DeviceSize size = offsetIndex + MVT_ALIGN_SIZE(iMemRequirements.size, alignment);
+
+		vk::MemoryAllocateInfo allocInfo{ .allocationSize = size, .memoryTypeIndex = findMemoryType(vMemRequirements.memoryTypeBits | iMemRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal) };
+		vk::raii::DeviceMemory memory = vk::raii::DeviceMemory(device, allocInfo);
+
+		vertexBuffer.bindMemory(*memory, 0);
+		indexBuffer.bindMemory(*memory, offsetIndex);
+
+		return VulkanMesh {std::move(memory), std::move(vertexBuffer), std::move(indexBuffer)};
 	}
 
 	void Application::createCommandBuffer() {

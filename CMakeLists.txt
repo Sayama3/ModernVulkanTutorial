@@ -67,8 +67,15 @@ set(SOURCES
 		Includes/MVT/SlangCompiler.hpp
 		Includes/MVT/Expected.hpp
 		Includes/MVT/GLM.hpp
-		Includes/MVT/Mesh.cpp
+		Sources/Mesh.cpp
 		Includes/MVT/Mesh.hpp
+		Sources/VulkanMesh.cpp
+		Includes/MVT/VulkanMesh.hpp
+		Sources/VmaUsage.cpp
+		Sources/VulkanMemoryAllocator.cpp
+		Includes/MVT/VulkanMemoryAllocator.hpp
+		Sources/VmaBuffer.cpp
+		Includes/MVT/VmaBuffer.hpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
