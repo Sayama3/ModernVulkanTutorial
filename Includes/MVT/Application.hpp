@@ -18,6 +18,12 @@ namespace MVT {
 		bool Resizable;
 	};
 
+	template<typename Func>
+	concept VkQueueFinder = requires(const Func& f, const vk::QueueFamilyProperties& q, uint32_t i)
+	{
+		 {f(q,i)} -> std::convertible_to<uint32_t>;
+	};
+
 	class Application {
 	public: // Vulkan Specific
 		static inline constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -67,6 +73,20 @@ namespace MVT {
 
 		uint32_t findQueueFamilies(vk::PhysicalDevice device, vk::QueueFlags queueType);
 
+
+		template<VkQueueFinder Func>
+		uint32_t findQueueFamilies(vk::PhysicalDevice device, Func&& pred) {
+			// find the index of the first queue family that supports graphics
+			std::vector<vk::QueueFamilyProperties> queueFamilyProperties = device.getQueueFamilyProperties();
+
+			for (uint32_t i = 0; i < queueFamilyProperties.size(); ++i) {
+				if (pred(queueFamilyProperties[i], i)) {
+					return i;
+				}
+			}
+
+			return queueFamilyProperties.size();
+		}
 		void createLogicalDevice();
 
 		void createSurface();
@@ -78,6 +98,8 @@ namespace MVT {
 		void createGraphicsPipeline();
 
 		void createCommandPool();
+
+		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory);
 
 		void createVertexBuffer(const std::vector<Vertex> &vertices);
 
@@ -98,6 +120,8 @@ namespace MVT {
 		[[nodiscard]] vk::raii::ShaderModule createShaderModule(const std::vector<char> &code) const;
 
 		uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
+
+		void copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, vk::DeviceSize size, vk::Fence fence);
 
 		void cleanupSwapChain();
 
@@ -124,11 +148,17 @@ namespace MVT {
 		vk::raii::DebugUtilsMessengerEXT debugMessenger = nullptr;
 		vk::raii::PhysicalDevice physicalDevice = nullptr;
 		vk::raii::Device device = nullptr;
+
 		uint32_t graphicsFamily{};
 		vk::raii::Queue graphicsQueue = nullptr;
 		vk::raii::SurfaceKHR surface = nullptr;
+
 		uint32_t presentFamily{};
 		vk::raii::Queue presentQueue = nullptr;
+
+		uint32_t transferFamily{};
+		vk::raii::Queue transferQueue = nullptr;
+
 		vk::Format swapChainImageFormat = vk::Format::eUndefined;
 		vk::Extent2D swapChainExtent;
 		vk::raii::SwapchainKHR swapChain = nullptr;
@@ -136,6 +166,11 @@ namespace MVT {
 		std::vector<vk::raii::ImageView> swapChainImageViews;
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
+
+		vk::raii::CommandPool transfersPool = nullptr;
+		std::vector<vk::raii::CommandBuffer> transferCommands{};
+		vk::raii::Fence transferFence = nullptr;
+
 		vk::raii::CommandPool commandPool = nullptr;
 		vk::raii::Buffer vertexBuffer = nullptr;
 		vk::raii::DeviceMemory vertexBufferMemory = nullptr;

@@ -62,10 +62,11 @@ namespace MVT {
 		createGraphicsPipeline();
 
 		createCommandPool();
-		createVertexBuffer(triangle);
-
 		createCommandBuffer();
 		createSyncObjects();
+
+		createVertexBuffer(triangle);
+
 	}
 
 	void Application::mainLoop() {
@@ -122,15 +123,19 @@ namespace MVT {
 			device.waitIdle();
 		}
 
+		vertexBufferMemory.clear();
+		vertexBuffer.clear();
+
 		presentCompleteSemaphores.clear();
 		renderFinishedSemaphores.clear();
 		inFlightFences.clear();
+		transferFence.clear();
 
 		commandBuffers.clear();
+		transferCommands.clear();
 
-		vertexBufferMemory.clear();
-		vertexBuffer.clear();
 		commandPool.clear();
+		transfersPool.clear();
 
 		graphicsPipeline.clear();
 
@@ -138,6 +143,7 @@ namespace MVT {
 
 		cleanupSwapChain();
 
+		transferQueue.clear();
 		presentQueue.clear();
 		graphicsQueue.clear();
 
@@ -380,6 +386,8 @@ namespace MVT {
 							? graphicsFamily
 							: static_cast<uint32_t>(queueFamilyProperties.size());
 
+
+
 		if (presentFamily == queueFamilyProperties.size()) {
 			// the graphicsIndex doesn't support present -> look for another family index that supports both
 			// graphics and present
@@ -408,18 +416,29 @@ namespace MVT {
 			throw std::runtime_error("[Vulkan] Could not find a queue for graphics or present -> terminating");
 		}
 
-
-		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos;
-		if (graphicsFamily == presentFamily) {
-			deviceQueueCreateInfos = {
-				vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
-			};
+		//transferQueue
+		transferFamily = findQueueFamilies(physicalDevice, [](const vk::QueueFamilyProperties& q, uint32_t i){return q.queueFlags & vk::QueueFlagBits::eTransfer && !(q.queueFlags & vk::QueueFlagBits::eGraphics);});
+		if (transferFamily == queueFamilyProperties.size()) {
+			transferFamily = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eTransfer);
+			if (transferFamily == queueFamilyProperties.size()) {
+				throw std::runtime_error("[Vulkan] Could not find a queue for transfer -> terminating");
+			}
 		}
-		else {
-			deviceQueueCreateInfos = {
-				vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
-				vk::DeviceQueueCreateInfo{.queueFamilyIndex = presentFamily, .queueCount = 1, .pQueuePriorities = &queuePriority},
-			};
+
+		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos{vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority}};
+
+		bool graphic = true;
+		bool present = false;
+		bool transfer = false;
+
+		if (graphicsFamily != presentFamily) {
+			deviceQueueCreateInfos.push_back(vk::DeviceQueueCreateInfo{.queueFamilyIndex = presentFamily, .queueCount = 1, .pQueuePriorities = &queuePriority});
+			present = true;
+		}
+
+		if (graphicsFamily != transferFamily && presentFamily != transferFamily) {
+			transfer = true;
+			deviceQueueCreateInfos.push_back(vk::DeviceQueueCreateInfo{.queueFamilyIndex = transferFamily, .queueCount = 1, .pQueuePriorities = &queuePriority});
 		}
 
 		vk::PhysicalDeviceFeatures physicalDeviceFeatures = physicalDevice.getFeatures();
@@ -455,6 +474,7 @@ namespace MVT {
 		device = vk::raii::Device(physicalDevice, deviceCreateInfo);
 		graphicsQueue = vk::raii::Queue(device, graphicsFamily, 0);
 		presentQueue = vk::raii::Queue(device, presentFamily, 0);
+		transferQueue = vk::raii::Queue(device, transferFamily, 0);
 	}
 
 	void Application::createSurface() {
@@ -607,42 +627,91 @@ namespace MVT {
 	}
 
 	void Application::createCommandPool() {
-		vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
-		commandPool = vk::raii::CommandPool(device, poolInfo);
+		{
+			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
+			commandPool = vk::raii::CommandPool(device, poolInfo);
+		}
+
+		{
+			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = transferFamily};
+			transfersPool = vk::raii::CommandPool(device, poolInfo);
+			assert(*transfersPool);
+		}
+	}
+
+	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory) {
+		const std::array families = {graphicsFamily, transferFamily};
+		vk::BufferCreateInfo bufferInfo{
+			.size = size,
+			.usage = usage,
+			.sharingMode = vk::SharingMode::eConcurrent,
+			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
+			.pQueueFamilyIndices = families.data()
+		};
+
+		buffer = vk::raii::Buffer(device, bufferInfo);
+		vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
+		vk::MemoryAllocateInfo allocInfo{ .allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties) };
+		bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
+		buffer.bindMemory(*bufferMemory, 0);
 	}
 
 	void Application::createVertexBuffer(const std::vector<Vertex>& vertices) {
-		vk::BufferCreateInfo bufferInfo{
-			.size = sizeof(vertices.at(0)) * vertices.size(),
-			.usage = vk::BufferUsageFlagBits::eVertexBuffer,
-			.sharingMode = vk::SharingMode::eExclusive
-		};
+		const std::array families = {graphicsFamily, transferFamily};
 
+		// vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+		// createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertexBuffer, vertexBufferMemory);
+		// void* data = vertexBufferMemory.mapMemory(0, bufferSize);
+		// memcpy(data, vertices.data(), bufferSize);
+		// vertexBufferMemory.unmapMemory();
+
+		vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
+
+		vk::BufferCreateInfo stagingInfo{ .size = bufferSize, .usage = vk::BufferUsageFlagBits::eTransferSrc, .sharingMode = vk::SharingMode::eExclusive };
+		vk::raii::Buffer stagingBuffer(device, stagingInfo);
+		vk::MemoryRequirements memRequirementsStaging = stagingBuffer.getMemoryRequirements();
+		vk::MemoryAllocateInfo memoryAllocateInfoStaging{  .allocationSize = memRequirementsStaging.size, .memoryTypeIndex = findMemoryType(memRequirementsStaging.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) };
+		vk::raii::DeviceMemory stagingBufferMemory(device, memoryAllocateInfoStaging);
+
+		stagingBuffer.bindMemory(stagingBufferMemory, 0);
+		void* dataStaging = stagingBufferMemory.mapMemory(0, stagingInfo.size);
+		memcpy(dataStaging, vertices.data(), stagingInfo.size);
+		stagingBufferMemory.unmapMemory();
+
+		vk::BufferCreateInfo bufferInfo{ .size = bufferSize,  .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, .sharingMode = vk::SharingMode::eConcurrent, .queueFamilyIndexCount = families.size(), .pQueueFamilyIndices = families.data() };
 		vertexBuffer = vk::raii::Buffer(device, bufferInfo);
 
 		vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo memoryAllocateInfo{
-			.allocationSize = memRequirements.size,
-			.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)
-		};
-
+		vk::MemoryAllocateInfo memoryAllocateInfo{  .allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal) };
 		vertexBufferMemory = vk::raii::DeviceMemory( device, memoryAllocateInfo );
+
 		vertexBuffer.bindMemory( *vertexBufferMemory, 0 );
 
-		void* data = vertexBufferMemory.mapMemory(0, bufferInfo.size);
-		memcpy(data, vertices.data(), bufferInfo.size);
-		vertexBufferMemory.unmapMemory();
+		copyBuffer(stagingBuffer, vertexBuffer, stagingInfo.size, transferFence);
+
+		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
+		assert(result == vk::Result::eSuccess);
 	}
 
 	void Application::createCommandBuffer() {
-		vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
-		commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+
+		{
+			vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
+			commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
+		}
+
+		{
+			vk::CommandBufferAllocateInfo allocInfo{.commandPool = transfersPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
+			transferCommands = vk::raii::CommandBuffers(device, allocInfo);
+			assert(transferCommands.size() == MAX_FRAMES_IN_FLIGHT);
+		}
 	}
 
 	void Application::createSyncObjects() {
 		presentCompleteSemaphores.clear();
 		renderFinishedSemaphores.clear();
 		inFlightFences.clear();
+		transferFence.clear();
 
 		presentCompleteSemaphores.reserve(swapChainImages.size());
 		renderFinishedSemaphores.reserve(swapChainImages.size());
@@ -655,6 +724,8 @@ namespace MVT {
 		for (int i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
 			inFlightFences.emplace_back(device, vk::FenceCreateInfo{.flags = vk::FenceCreateFlagBits::eSignaled});
 		}
+
+		transferFence = {device, vk::FenceCreateInfo{}};
 	}
 
 
@@ -803,6 +874,13 @@ namespace MVT {
 		}
 
 		throw std::runtime_error("failed to find suitable memory type!");
+	}
+
+	void Application::copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, const vk::DeviceSize size, vk::Fence fence) {
+		transferCommands[currentFrame].begin(vk::CommandBufferBeginInfo { .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+		transferCommands[currentFrame].copyBuffer(srcBuffer, vk_buffer, vk::BufferCopy(0, 0, size));
+		transferCommands[currentFrame].end();
+		transferQueue.submit(vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*transferCommands[currentFrame] }, fence);
 	}
 
 	void Application::cleanupSwapChain() {
