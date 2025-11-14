@@ -12,18 +12,27 @@
 
 #include "MVT/Mesh.hpp"
 #include "MVT/VulkanMemoryAllocator.hpp"
+#include "MVT/VulkanMesh.hpp"
 
 namespace MVT {
-	struct WindowParameters {
-		uint32_t Width;
-		uint32_t Height;
-		bool Resizable;
-	};
 
 	template<typename Func>
 	concept VkQueueFinder = requires(const Func& f, const vk::QueueFamilyProperties& q, uint32_t i)
 	{
-		 {f(q,i)} -> std::convertible_to<uint32_t>;
+		{f(q,i)} -> std::convertible_to<uint32_t>;
+	};
+
+	template<typename T, typename Array>
+	concept ArrayData = requires(const Array& array)
+	{
+		{array.size() -> std::template convertible_to<uint64_t>};
+		{array.data() -> std::template convertible_to<const T*>};
+	};
+
+	struct WindowParameters {
+		uint32_t Width;
+		uint32_t Height;
+		bool Resizable;
 	};
 
 	class Application {
@@ -122,6 +131,14 @@ namespace MVT {
 		void createIndexBuffer(const std::array<uint32_t, count> &indices) {createIndexBuffer( indices.data(), indices.size()); }
 		void createIndexBuffer(const std::vector<uint32_t> &indices) {createIndexBuffer( indices.data(), indices.size()); }
 		void createIndexBuffer(const uint32_t *indices, uint32_t count);
+
+
+		template<ArrayData<Vertex> VertexArray, ArrayData<uint32_t> IndiceArray>
+		VulkanMesh createVulkanMesh(const VertexArray& vertex, const IndiceArray& indices) {
+			return createVulkanMesh(vertex.data(), vertex.size(), indices.data(), indices.size());
+		}
+
+		VulkanMesh createVulkanMesh(const Vertex *vertex, uint32_t vCount, const uint32_t *indices, uint32_t iCount);
 
 		void createCommandBuffer();
 

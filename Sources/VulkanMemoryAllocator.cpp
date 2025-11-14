@@ -38,7 +38,7 @@ namespace MVT {
 		vmaDestroyAllocator(allocator);
 	}
 
-	VmaBuffer VulkanMemoryAllocator::createBuffer(const VkBufferCreateInfo *pBufferCreateInfo, const VmaAllocationCreateInfo *pAllocationCreateInfo) {
-		return VmaBuffer{allocator, pBufferCreateInfo, pAllocationCreateInfo};
+	void VulkanMemoryAllocator::createBuffer(const VkBufferCreateInfo *pBufferCreateInfo, const VmaAllocationCreateInfo *pAllocationCreateInfo, VmaBuffer *pBuffer) {
+		*pBuffer = {pBuffer->allocator, pBufferCreateInfo, pAllocationCreateInfo};
 	}
 } // MVT

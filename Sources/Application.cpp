@@ -73,7 +73,6 @@ namespace MVT {
 		createVertexBuffer(rectangle_vertices);
 		createIndexBuffer(rectangle_indices);
 
-
 	}
 
 	void Application::mainLoop() {
@@ -745,7 +744,7 @@ namespace MVT {
 		device.resetFences(*transferFence);
 	}
 
-	VulkanMesh Application::createVulkanMesh(vk::raii::Device& device, const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount, const uint32_t graphicsFamily, const uint32_t transferFamily) {
+	VulkanMesh Application::createVulkanMesh(const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount) {
 
 		const uint64_t sizeVertices = sizeof(*vertex) * vCount;
 		const uint64_t sizeIndices = sizeof(*indices) * iCount;
