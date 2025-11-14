@@ -22,6 +22,9 @@ There are corresponding imported targets for each of these.
 ``glslc``
   The SPIR-V compiler.
 
+``slang``
+  The Shader Slang compiler.
+
 ``glslangValidator``
   The ``glslangValidator`` tool.
 
@@ -126,6 +129,9 @@ This module defines the following variables:
 
   value from ``vulkan/vulkan_core.h``
 ``Vulkan_glslc_FOUND``
+  .. versionadded:: 3.24
+
+``Vulkan_slang_FOUND``
   .. versionadded:: 3.24
 
   True, if the SDK has the glslc executable.
@@ -450,6 +456,19 @@ if(glslang IN_LIST Vulkan_FIND_COMPONENTS)
     )
     mark_as_advanced(Vulkan_glslang_DEBUG_LIBRARY)
 endif()
+if(slang IN_LIST Vulkan_FIND_COMPONENTS)
+    find_library(Vulkan_slang_LIBRARY
+        NAMES slang
+        HINTS
+        ${_Vulkan_hint_library_search_paths})
+    mark_as_advanced(Vulkan_slang_LIBRARY)
+
+    find_library(Vulkan_slang_DEBUG_LIBRARY
+        NAMES slangd
+        HINTS
+        ${_Vulkan_hint_library_search_paths})
+    mark_as_advanced(Vulkan_slang_DEBUG_LIBRARY)
+endif()
 if(shaderc_combined IN_LIST Vulkan_FIND_COMPONENTS)
     find_library(Vulkan_shaderc_combined_LIBRARY
         NAMES shaderc_combined
@@ -588,6 +607,7 @@ _Vulkan_set_library_component_found(glslang
     glslang-machineindependent
     glslang-genericcodegen)
 _Vulkan_set_library_component_found(shaderc_combined)
+_Vulkan_set_library_component_found(slang)
 _Vulkan_set_library_component_found(SPIRV-Tools)
 _Vulkan_set_library_component_found(volk)
 _Vulkan_set_library_component_found(dxc)
@@ -850,6 +870,36 @@ if(Vulkan_FOUND)
         if(UNIX)
             find_package(Threads REQUIRED)
             target_link_libraries(Vulkan::shaderc_combined
+                INTERFACE
+                Threads::Threads)
+        endif()
+    endif()
+
+    if((Vulkan_slang_LIBRARY OR Vulkan_slang_DEBUG_LIBRARY) AND NOT TARGET Vulkan::slang)
+        add_library(Vulkan::slang STATIC IMPORTED)
+        set_property(TARGET Vulkan::slang
+            PROPERTY
+            INTERFACE_INCLUDE_DIRECTORIES "${Vulkan_INCLUDE_DIRS}")
+        if(Vulkan_slang_LIBRARY)
+            set_property(TARGET Vulkan::slang APPEND
+                PROPERTY
+                IMPORTED_CONFIGURATIONS Release)
+            set_property(TARGET Vulkan::slang
+                PROPERTY
+                IMPORTED_LOCATION_RELEASE "${Vulkan_slang_LIBRARY}")
+        endif()
+        if(Vulkan_slang_DEBUG_LIBRARY)
+            set_property(TARGET Vulkan::slang APPEND
+                PROPERTY
+                IMPORTED_CONFIGURATIONS Debug)
+            set_property(TARGET Vulkan::slang
+                PROPERTY
+                IMPORTED_LOCATION_DEBUG "${Vulkan_slang_DEBUG_LIBRARY}")
+        endif()
+
+        if(UNIX)
+            find_package(Threads REQUIRED)
+            target_link_libraries(Vulkan::slang
                 INTERFACE
                 Threads::Threads)
         endif()
