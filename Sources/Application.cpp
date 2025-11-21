@@ -12,9 +12,12 @@
 #include <cstdlib>
 #include <utility>
 #include <algorithm>
+#include <chrono>
 
+#include "MVT/GLM.hpp"
 #include "MVT/Mesh.hpp"
 #include "MVT/SlangCompiler.hpp"
+#include "MVT/UniformBufferObject.hpp"
 #include "MVT/VulkanMesh.hpp"
 
 #define MVT_ALIGN_SIZE(size, alignement) (size % alignment == 0 ? size : ((size / alignment) + 1) * alignment)
@@ -64,6 +67,8 @@ namespace MVT {
 
 		createSwapChain();
 		createSwapChainViews();
+
+		createDescriptorSetLayout();
 		createGraphicsPipeline();
 
 		createCommandPool();
@@ -72,7 +77,8 @@ namespace MVT {
 
 		createVertexBuffer(rectangle_vertices);
 		createIndexBuffer(rectangle_indices);
-
+		createUniformBuffers();
+		createDescriptorPool();
 	}
 
 	void Application::mainLoop() {
@@ -202,6 +208,8 @@ namespace MVT {
 		device.resetFences(*inFlightFences[currentFrame]);
 		commandBuffers[currentFrame].reset();
 		recordCommandBuffer(imageIndex);
+
+		updateUniformBuffer(currentFrame);
 
 		vk::PipelineStageFlags waitDestinationStageMask(vk::PipelineStageFlagBits::eColorAttachmentOutput);
 		const vk::SubmitInfo submitInfo{
@@ -398,7 +406,6 @@ namespace MVT {
 							: static_cast<uint32_t>(queueFamilyProperties.size());
 
 
-
 		if (presentFamily == queueFamilyProperties.size()) {
 			// the graphicsIndex doesn't support present -> look for another family index that supports both
 			// graphics and present
@@ -428,7 +435,7 @@ namespace MVT {
 		}
 
 		//transferQueue
-		transferFamily = findQueueFamilies(physicalDevice, [](const vk::QueueFamilyProperties& q, uint32_t i){return q.queueFlags & vk::QueueFlagBits::eTransfer && !(q.queueFlags & vk::QueueFlagBits::eGraphics);});
+		transferFamily = findQueueFamilies(physicalDevice, [](const vk::QueueFamilyProperties &q, uint32_t i) { return q.queueFlags & vk::QueueFlagBits::eTransfer && !(q.queueFlags & vk::QueueFlagBits::eGraphics); });
 		if (transferFamily == queueFamilyProperties.size()) {
 			transferFamily = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eTransfer);
 			if (transferFamily == queueFamilyProperties.size()) {
@@ -573,6 +580,15 @@ namespace MVT {
 		}
 	}
 
+	void Application::createDescriptorSetLayout() {
+		vk::DescriptorSetLayoutBinding uboLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr);
+		vk::DescriptorSetLayoutCreateInfo layoutInfo{
+			.bindingCount = 1,
+			.pBindings = &uboLayoutBinding,
+		};
+		descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
+	}
+
 	void Application::createGraphicsPipeline() {
 		//Basic code, we could upgrade it with an all-in-one function that seatch and find every function name in the slang shader available.
 
@@ -625,7 +641,7 @@ namespace MVT {
 
 		vk::PipelineDynamicStateCreateInfo dynamicState{.dynamicStateCount = static_cast<uint32_t>(dynamicStates.size()), .pDynamicStates = dynamicStates.data()};
 
-		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 0, .pushConstantRangeCount = 0};
+		vk::PipelineLayoutCreateInfo pipelineLayoutInfo{.setLayoutCount = 1, .pSetLayouts = &*descriptorSetLayout, .pushConstantRangeCount = 0, .pPushConstantRanges = nullptr};
 
 		pipelineLayout = vk::raii::PipelineLayout(device, pipelineLayoutInfo);
 
@@ -645,24 +661,21 @@ namespace MVT {
 		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
-	void Application::createCommandPool() {
-		{
+	void Application::createCommandPool() { {
 			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
 			commandPool = vk::raii::CommandPool(device, poolInfo);
-		}
-
-		{
+		} {
 			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = transferFamily};
 			transfersPool = vk::raii::CommandPool(device, poolInfo);
 			assert(*transfersPool);
 		}
 	}
 
-	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory) {
+	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory) {
 		createBuffer(size, usage, properties, buffer, bufferMemory, {graphicsFamily});
 	}
 
-	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer& buffer, vk::raii::DeviceMemory& bufferMemory, const std::vector<uint32_t>& families) {
+	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory, const std::vector<uint32_t> &families) {
 		// const std::array families = {graphicsFamily, transferFamily};
 
 		vk::BufferCreateInfo bufferInfo{
@@ -675,16 +688,16 @@ namespace MVT {
 
 		buffer = vk::raii::Buffer(device, bufferInfo);
 		vk::MemoryRequirements memRequirements = buffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo allocInfo{ .allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties) };
+		vk::MemoryAllocateInfo allocInfo{.allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)};
 		bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
 		buffer.bindMemory(*bufferMemory, 0);
 	}
 
-	void Application::createVertexBuffer(const std::vector<Vertex>& vertices) {
+	void Application::createVertexBuffer(const std::vector<Vertex> &vertices) {
 		createVertexBuffer(vertices.data(), vertices.size());
 	}
 
-	void Application::createVertexBuffer(const Vertex* vertices, const uint64_t count) {
+	void Application::createVertexBuffer(const Vertex *vertices, const uint64_t count) {
 		const std::array families = {graphicsFamily, transferFamily};
 
 		// vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
@@ -695,25 +708,25 @@ namespace MVT {
 
 		vk::DeviceSize bufferSize = sizeof(Vertex) * count;
 
-		vk::BufferCreateInfo stagingInfo{ .size = bufferSize, .usage = vk::BufferUsageFlagBits::eTransferSrc, .sharingMode = vk::SharingMode::eExclusive };
+		vk::BufferCreateInfo stagingInfo{.size = bufferSize, .usage = vk::BufferUsageFlagBits::eTransferSrc, .sharingMode = vk::SharingMode::eExclusive};
 		vk::raii::Buffer stagingBuffer(device, stagingInfo);
 		vk::MemoryRequirements memRequirementsStaging = stagingBuffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo memoryAllocateInfoStaging{  .allocationSize = memRequirementsStaging.size, .memoryTypeIndex = findMemoryType(memRequirementsStaging.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent) };
+		vk::MemoryAllocateInfo memoryAllocateInfoStaging{.allocationSize = memRequirementsStaging.size, .memoryTypeIndex = findMemoryType(memRequirementsStaging.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)};
 		vk::raii::DeviceMemory stagingBufferMemory(device, memoryAllocateInfoStaging);
 
 		stagingBuffer.bindMemory(stagingBufferMemory, 0);
-		void* dataStaging = stagingBufferMemory.mapMemory(0, stagingInfo.size);
+		void *dataStaging = stagingBufferMemory.mapMemory(0, stagingInfo.size);
 		memcpy(dataStaging, vertices, stagingInfo.size);
 		stagingBufferMemory.unmapMemory();
 
-		vk::BufferCreateInfo bufferInfo{ .size = bufferSize,  .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, .sharingMode = vk::SharingMode::eConcurrent, .queueFamilyIndexCount = families.size(), .pQueueFamilyIndices = families.data() };
+		vk::BufferCreateInfo bufferInfo{.size = bufferSize, .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, .sharingMode = vk::SharingMode::eConcurrent, .queueFamilyIndexCount = families.size(), .pQueueFamilyIndices = families.data()};
 		vertexBuffer = vk::raii::Buffer(device, bufferInfo);
 
 		vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo memoryAllocateInfo{  .allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal) };
-		vertexBufferMemory = vk::raii::DeviceMemory( device, memoryAllocateInfo );
+		vk::MemoryAllocateInfo memoryAllocateInfo{.allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)};
+		vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
 
-		vertexBuffer.bindMemory( *vertexBufferMemory, 0 );
+		vertexBuffer.bindMemory(*vertexBufferMemory, 0);
 
 		copyBuffer(stagingBuffer, vertexBuffer, stagingInfo.size, transferFence);
 
@@ -723,7 +736,6 @@ namespace MVT {
 	}
 
 	void Application::createIndexBuffer(const uint32_t *indices, const uint32_t count) {
-
 		vk::DeviceSize bufferSize = sizeof(indices[0]) * count;
 
 		vk::raii::Buffer stagingBuffer({});
@@ -731,7 +743,7 @@ namespace MVT {
 
 		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
 
-		void* data = stagingBufferMemory.mapMemory(0, bufferSize);
+		void *data = stagingBufferMemory.mapMemory(0, bufferSize);
 		memcpy(data, indices, (size_t) bufferSize);
 		stagingBufferMemory.unmapMemory();
 
@@ -744,8 +756,29 @@ namespace MVT {
 		device.resetFences(*transferFence);
 	}
 
-	VulkanMesh Application::createVulkanMesh(const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount) {
+	void Application::createUniformBuffers() {
+		uniformBuffers.clear();
+		uniformBuffersMemory.clear();
+		uniformBuffersMapped.clear();
 
+		for (uint32_t i = 0; i < MAX_FRAMES_IN_FLIGHT; ++i) {
+			vk::DeviceSize bufferSize = sizeof(UniformBufferObject);
+			vk::raii::Buffer buffer({});
+			vk::raii::DeviceMemory bufferMem({});
+
+			createBuffer(bufferSize, vk::BufferUsageFlagBits::eUniformBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, buffer, bufferMem, {graphicsFamily});
+
+			uniformBuffers.emplace_back(std::move(buffer));
+			uniformBuffersMemory.emplace_back(std::move(bufferMem));
+			uniformBuffersMapped.emplace_back( uniformBuffersMemory[i].mapMemory(0, bufferSize));
+		}
+	}
+
+	void Application::createDescriptorPool() {
+		vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT);
+	}
+
+	VulkanMesh Application::createVulkanMesh(const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount) {
 		const uint64_t sizeVertices = sizeof(*vertex) * vCount;
 		const uint64_t sizeIndices = sizeof(*indices) * iCount;
 
@@ -783,23 +816,19 @@ namespace MVT {
 		const vk::DeviceSize offsetIndex = MVT_ALIGN_SIZE(vMemRequirements.size, alignment);
 		const vk::DeviceSize size = offsetIndex + MVT_ALIGN_SIZE(iMemRequirements.size, alignment);
 
-		vk::MemoryAllocateInfo allocInfo{ .allocationSize = size, .memoryTypeIndex = findMemoryType(vMemRequirements.memoryTypeBits | iMemRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal) };
+		vk::MemoryAllocateInfo allocInfo{.allocationSize = size, .memoryTypeIndex = findMemoryType(vMemRequirements.memoryTypeBits | iMemRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)};
 		vk::raii::DeviceMemory memory = vk::raii::DeviceMemory(device, allocInfo);
 
 		vertexBuffer.bindMemory(*memory, 0);
 		indexBuffer.bindMemory(*memory, offsetIndex);
 
-		return VulkanMesh {std::move(memory), std::move(vertexBuffer), std::move(indexBuffer)};
+		return VulkanMesh{std::move(memory), std::move(vertexBuffer), std::move(indexBuffer)};
 	}
 
-	void Application::createCommandBuffer() {
-
-		{
+	void Application::createCommandBuffer() { {
 			vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
 			commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-		}
-
-		{
+		} {
 			vk::CommandBufferAllocateInfo allocInfo{.commandPool = transfersPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
 			transferCommands = vk::raii::CommandBuffers(device, allocInfo);
 			assert(transferCommands.size() == MAX_FRAMES_IN_FLIGHT);
@@ -864,7 +893,7 @@ namespace MVT {
 			commandBuffers[currentFrame].setScissor(0, vk::Rect2D(vk::Offset2D(0, 0), swapChainExtent));
 
 			commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
-			commandBuffers[currentFrame].bindIndexBuffer( *indexBuffer, 0, vk::IndexType::eUint32 );
+			commandBuffers[currentFrame].bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint32);
 
 			commandBuffers[currentFrame].drawIndexed(rectangle_indices.size(), 1, 0, 0, 0);
 
@@ -883,6 +912,22 @@ namespace MVT {
 		);
 
 		commandBuffers[currentFrame].end();
+	}
+
+	void Application::updateUniformBuffer(const uint32_t currentImage) {
+		static auto startTime = std::chrono::high_resolution_clock::now();
+
+		const auto currentTime = std::chrono::high_resolution_clock::now();
+		const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
+
+		UniformBufferObject ubo{};
+		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+
+		ubo.proj[1][1] *= -1;
+
+		memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 	}
 
 	void Application::transition_image_layout(
@@ -968,7 +1013,7 @@ namespace MVT {
 		vk::PhysicalDeviceMemoryProperties memProperties = physicalDevice.getMemoryProperties();
 
 		for (uint32_t i = 0; i < memProperties.memoryTypeCount; i++) {
-			if ((typeFilter & (1 << i))&& (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
+			if ((typeFilter & (1 << i)) && (memProperties.memoryTypes[i].propertyFlags & properties) == properties) {
 				return i;
 			}
 		}
@@ -977,10 +1022,10 @@ namespace MVT {
 	}
 
 	void Application::copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, const vk::DeviceSize size, vk::Fence fence) {
-		transferCommands[currentFrame].begin(vk::CommandBufferBeginInfo { .flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit });
+		transferCommands[currentFrame].begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
 		transferCommands[currentFrame].copyBuffer(srcBuffer, vk_buffer, vk::BufferCopy(0, 0, size));
 		transferCommands[currentFrame].end();
-		transferQueue.submit(vk::SubmitInfo{ .commandBufferCount = 1, .pCommandBuffers = &*transferCommands[currentFrame] }, fence);
+		transferQueue.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &*transferCommands[currentFrame]}, fence);
 	}
 
 	void Application::cleanupSwapChain() {

@@ -15,18 +15,17 @@
 #include "MVT/VulkanMesh.hpp"
 
 namespace MVT {
-
 	template<typename Func>
-	concept VkQueueFinder = requires(const Func& f, const vk::QueueFamilyProperties& q, uint32_t i)
+	concept VkQueueFinder = requires(const Func &f, const vk::QueueFamilyProperties &q, uint32_t i)
 	{
-		{f(q,i)} -> std::convertible_to<uint32_t>;
+		{ f(q, i) } -> std::convertible_to<uint32_t>;
 	};
 
 	template<typename T, typename Array>
-	concept ArrayData = requires(const Array& array)
+	concept ArrayData = requires(const Array &array)
 	{
-		{array.size() -> std::template convertible_to<uint64_t>};
-		{array.data() -> std::template convertible_to<const T*>};
+		{ array.size()->std::template convertible_to<uint64_t> };
+		{ array.data()->std::template convertible_to<const T *> };
 	};
 
 	struct WindowParameters {
@@ -86,7 +85,7 @@ namespace MVT {
 
 
 		template<VkQueueFinder Func>
-		uint32_t findQueueFamilies(vk::PhysicalDevice device, Func&& pred) {
+		uint32_t findQueueFamilies(vk::PhysicalDevice device, Func &&pred) {
 			// find the index of the first queue family that supports graphics
 			std::vector<vk::QueueFamilyProperties> queueFamilyProperties = device.getQueueFamilyProperties();
 
@@ -98,6 +97,7 @@ namespace MVT {
 
 			return queueFamilyProperties.size();
 		}
+
 		void createLogicalDevice();
 
 		void createVMA();
@@ -110,6 +110,8 @@ namespace MVT {
 
 		void createSwapChainViews();
 
+		void createDescriptorSetLayout();
+
 		void createGraphicsPipeline();
 
 		void createCommandPool();
@@ -120,21 +122,27 @@ namespace MVT {
 
 
 		template<uint64_t count>
-		inline void createVertexBuffer(const std::array<Vertex, count>& vertices) {
+		inline void createVertexBuffer(const std::array<Vertex, count> &vertices) {
 			createVertexBuffer(vertices.data(), count);
 		}
 
 		void createVertexBuffer(const std::vector<Vertex> &vertices);
+
 		void createVertexBuffer(const Vertex *vertices, uint64_t count);
 
 		template<uint64_t count>
-		void createIndexBuffer(const std::array<uint32_t, count> &indices) {createIndexBuffer( indices.data(), indices.size()); }
-		void createIndexBuffer(const std::vector<uint32_t> &indices) {createIndexBuffer( indices.data(), indices.size()); }
+		void createIndexBuffer(const std::array<uint32_t, count> &indices) { createIndexBuffer(indices.data(), indices.size()); }
+
+		void createIndexBuffer(const std::vector<uint32_t> &indices) { createIndexBuffer(indices.data(), indices.size()); }
+
 		void createIndexBuffer(const uint32_t *indices, uint32_t count);
 
+		void createUniformBuffers();
+
+		void createDescriptorPool();
 
 		template<ArrayData<Vertex> VertexArray, ArrayData<uint32_t> IndiceArray>
-		VulkanMesh createVulkanMesh(const VertexArray& vertex, const IndiceArray& indices) {
+		VulkanMesh createVulkanMesh(const VertexArray &vertex, const IndiceArray &indices) {
 			return createVulkanMesh(vertex.data(), vertex.size(), indices.data(), indices.size());
 		}
 
@@ -145,6 +153,8 @@ namespace MVT {
 		void createSyncObjects();
 
 		void recordCommandBuffer(uint32_t imageIndex);
+
+		void updateUniformBuffer(uint32_t currentImage);
 
 		void transition_image_layout(uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask);
 
@@ -203,6 +213,7 @@ namespace MVT {
 		vk::raii::SwapchainKHR swapChain = nullptr;
 		std::vector<vk::Image> swapChainImages;
 		std::vector<vk::raii::ImageView> swapChainImageViews;
+		vk::raii::DescriptorSetLayout descriptorSetLayout = nullptr;
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 
@@ -217,6 +228,10 @@ namespace MVT {
 
 		vk::raii::Buffer indexBuffer = nullptr;
 		vk::raii::DeviceMemory indexBufferMemory = nullptr;
+
+		std::vector<vk::raii::Buffer> uniformBuffers;
+		std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+		std::vector<void *> uniformBuffersMapped;
 
 		bool framebufferResized = false;
 		bool windowMinimized = false;
