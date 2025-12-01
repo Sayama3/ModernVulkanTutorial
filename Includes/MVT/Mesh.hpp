@@ -4,6 +4,7 @@
 
 #pragma once
 
+
 #include "GLM.hpp"
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
@@ -26,17 +27,17 @@ namespace MVT {
 		}
 	};
 
-	inline constexpr std::array triangle = {
-		Vertex{glm::vec2{0.0f, -0.5f}, glm::vec3{1.0f, 1.0f, 1.0f}},
-		Vertex{glm::vec2{0.5f, 0.5f}, glm::vec3{0.0f, 1.0f, 0.0f}},
-		Vertex{glm::vec2{-0.5f, 0.5f}, glm::vec3{0.0f, 0.0f, 1.0f}}
-	};
+	// inline constexpr std::array triangle = {
+	// 	Vertex{glm::vec2{0.0f, -0.5f}, glm::vec3{1.0f, 1.0f, 1.0f}},
+	// 	Vertex{glm::vec2{0.5f, 0.5f}, glm::vec3{0.0f, 1.0f, 0.0f}},
+	// 	Vertex{glm::vec2{-0.5f, 0.5f}, glm::vec3{0.0f, 0.0f, 1.0f}}
+	// };
 
 	inline constexpr std::array rectangle_vertices = {
-		Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-		Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-		Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-		Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
+	Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
+	Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
+	Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
 	};
 
 	inline constexpr std::array rectangle_indices = {
@@ -48,3 +49,4 @@ namespace MVT {
 	private:
 	};
 } // MVT
+

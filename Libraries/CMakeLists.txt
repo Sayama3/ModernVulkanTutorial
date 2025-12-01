@@ -3,7 +3,6 @@ cmake_minimum_required(VERSION 3.16)
 include(FetchContent)
 
 set(GLM_ENABLE_CXX_20 ON)
-set(GLM_ENABLE_CXX_23 ON)
 set(GLM_BUILD_LIBRARY OFF)
 set(GLM_ENABLE_FAST_MATH ON)
 set(GLM_ENABLE_EXPERIMENTAL ON)

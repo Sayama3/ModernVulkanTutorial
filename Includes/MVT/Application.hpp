@@ -141,6 +141,8 @@ namespace MVT {
 
 		void createDescriptorPool();
 
+		void createDescriptorSets();
+
 		template<ArrayData<Vertex> VertexArray, ArrayData<uint32_t> IndiceArray>
 		VulkanMesh createVulkanMesh(const VertexArray &vertex, const IndiceArray &indices) {
 			return createVulkanMesh(vertex.data(), vertex.size(), indices.data(), indices.size());
@@ -232,6 +234,9 @@ namespace MVT {
 		std::vector<vk::raii::Buffer> uniformBuffers;
 		std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
 		std::vector<void *> uniformBuffersMapped;
+
+		vk::raii::DescriptorPool descriptorPool = nullptr;
+		std::vector<vk::raii::DescriptorSet> descriptorSets;
 
 		bool framebufferResized = false;
 		bool windowMinimized = false;

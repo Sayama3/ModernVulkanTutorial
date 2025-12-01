@@ -79,6 +79,10 @@ namespace MVT {
 		createIndexBuffer(rectangle_indices);
 		createUniformBuffers();
 		createDescriptorPool();
+		createDescriptorSets();
+
+		// createCommandBuffer();
+		// createSyncObjects();
 	}
 
 	void Application::mainLoop() {
@@ -135,6 +139,14 @@ namespace MVT {
 			device.waitIdle();
 		}
 
+		descriptorSets.clear();
+
+		descriptorPool.clear();
+
+		uniformBuffersMemory.clear();
+		uniformBuffersMapped.clear();
+		uniformBuffers.clear();
+
 		indexBufferMemory.clear();
 		indexBuffer.clear();
 
@@ -155,6 +167,8 @@ namespace MVT {
 		graphicsPipeline.clear();
 
 		pipelineLayout.clear();
+
+		descriptorSetLayout.clear();
 
 		cleanupSwapChain();
 
@@ -614,8 +628,8 @@ namespace MVT {
 
 		vk::PipelineRasterizationStateCreateInfo rasterizer{
 			.depthClampEnable = vk::False, .rasterizerDiscardEnable = vk::False,
-			.polygonMode = vk::PolygonMode::eFill, .cullMode = vk::CullModeFlagBits::eBack,
-			.frontFace = vk::FrontFace::eClockwise, .depthBiasEnable = vk::False,
+			.polygonMode = vk::PolygonMode::eFill, .cullMode = vk::CullModeFlagBits::eNone,
+			.frontFace = vk::FrontFace::eCounterClockwise, .depthBiasEnable = vk::False,
 			.depthBiasSlopeFactor = 1.0f, .lineWidth = 1.0f
 		};
 
@@ -770,12 +784,29 @@ namespace MVT {
 
 			uniformBuffers.emplace_back(std::move(buffer));
 			uniformBuffersMemory.emplace_back(std::move(bufferMem));
-			uniformBuffersMapped.emplace_back( uniformBuffersMemory[i].mapMemory(0, bufferSize));
+			uniformBuffersMapped.emplace_back(uniformBuffersMemory[i].mapMemory(0, bufferSize));
 		}
 	}
 
 	void Application::createDescriptorPool() {
 		vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT);
+
+		vk::DescriptorPoolCreateInfo poolInfo{.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, .maxSets = MAX_FRAMES_IN_FLIGHT, .poolSizeCount = 1, .pPoolSizes = &poolSize};
+
+		descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
+	}
+
+	void Application::createDescriptorSets() {
+		std::vector<vk::DescriptorSetLayout> layouts(MAX_FRAMES_IN_FLIGHT, *descriptorSetLayout);
+		vk::DescriptorSetAllocateInfo allocInfo{.descriptorPool = descriptorPool, .descriptorSetCount = static_cast<uint32_t>(layouts.size()), .pSetLayouts = layouts.data()};
+		descriptorSets.clear();
+		descriptorSets = device.allocateDescriptorSets(allocInfo);
+
+		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
+			vk::DescriptorBufferInfo bufferInfo{.buffer = uniformBuffers[i], .offset = 0, .range = sizeof(UniformBufferObject)};
+			vk::WriteDescriptorSet descriptorWrite{.dstSet = descriptorSets[i], .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo};
+			device.updateDescriptorSets(descriptorWrite, {});
+		}
 	}
 
 	VulkanMesh Application::createVulkanMesh(const Vertex *vertex, const uint32_t vCount, const uint32_t *indices, const uint32_t iCount) {
@@ -895,6 +926,7 @@ namespace MVT {
 			commandBuffers[currentFrame].bindVertexBuffers(0, *vertexBuffer, {0});
 			commandBuffers[currentFrame].bindIndexBuffer(*indexBuffer, 0, vk::IndexType::eUint32);
 
+			commandBuffers[currentFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[currentFrame], nullptr);
 			commandBuffers[currentFrame].drawIndexed(rectangle_indices.size(), 1, 0, 0, 0);
 
 			commandBuffers[currentFrame].endRendering();
@@ -921,11 +953,16 @@ namespace MVT {
 		const float time = std::chrono::duration<float, std::chrono::seconds::period>(currentTime - startTime).count();
 
 		UniformBufferObject ubo{};
-		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view = glm::lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+		//
+		// ubo.model = glm::identity<glm::mat4x4>();
+		// ubo.view = glm::identity<glm::mat4x4>();
+		// ubo.proj = glm::identity<glm::mat4x4>();
 
+		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.view  = glm::inverse(glm::translate(glm::identity<glm::mat4>(), {2,2, 2}));
+		ubo.proj  = glm::perspective(glm::radians(90.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), -1.0f, 1000.0f);
 		ubo.proj[1][1] *= -1;
+
 
 		memcpy(uniformBuffersMapped[currentImage], &ubo, sizeof(ubo));
 	}
