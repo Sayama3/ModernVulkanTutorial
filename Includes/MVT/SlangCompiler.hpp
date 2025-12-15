@@ -46,7 +46,7 @@ namespace MVT {
 		static inline std::atomic<uint64_t> s_SlangCompilersInUse{0};
 
 	public:
-		SlangCompiler();
+		SlangCompiler(bool columnMajor = true);
 
 		~SlangCompiler();
 

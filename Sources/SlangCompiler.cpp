@@ -123,7 +123,7 @@ namespace MVT {
 		s_MainCompiler = std::make_unique<SlangCompiler>();
 	}
 
-	SlangCompiler::SlangCompiler() : m_SessionDescription{} {
+	SlangCompiler::SlangCompiler(const bool columnMajor) : m_SessionDescription{} {
 		assert(s_GlobalSession);
 
 		static SlangProfileID spirv_1_4 = MVT::SlangCompiler::FindProfile("spirv_1_4");
@@ -145,17 +145,17 @@ namespace MVT {
 
 		std::array options =
 		{
-			slang::CompilerOptionEntry {
+			slang::CompilerOptionEntry{
 				slang::CompilerOptionName::EmitSpirvDirectly,
 				{slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
 			},
-			slang::CompilerOptionEntry {
+			slang::CompilerOptionEntry{
 				slang::CompilerOptionName::MatrixLayoutColumn,
-				{slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
+				{slang::CompilerOptionValueKind::Int, columnMajor ? 1 : 0, 0, nullptr, nullptr}
 			},
-			slang::CompilerOptionEntry {
+			slang::CompilerOptionEntry{
 				slang::CompilerOptionName::MatrixLayoutRow,
-				{slang::CompilerOptionValueKind::Int, 0, 0, nullptr, nullptr}
+				{slang::CompilerOptionValueKind::Int, columnMajor ? 0 : 1, 0, nullptr, nullptr}
 			}
 		};
 		m_SessionDescription.compilerOptionEntries = options.data();
