@@ -946,6 +946,8 @@ namespace MVT {
 		commandBuffers[currentFrame].end();
 	}
 
+#define PRINT_GLM_VAR(VAR) std::cout << #VAR << ":\n" << glm::to_string(VAR) << std::endl;
+
 	void Application::updateUniformBuffer(const uint32_t currentImage) {
 		static auto startTime = std::chrono::high_resolution_clock::now();
 
@@ -958,9 +960,9 @@ namespace MVT {
 		// ubo.view = glm::identity<glm::mat4x4>();
 		// ubo.proj = glm::identity<glm::mat4x4>();
 
-		ubo.model = glm::rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view  = glm::inverse(glm::translate(glm::identity<glm::mat4>(), {2,2, 2}));
-		ubo.proj  = glm::perspective(glm::radians(90.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), -1.0f, 1000.0f);
+		ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.view  = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.proj  = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1;
 
 

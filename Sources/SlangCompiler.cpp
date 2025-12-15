@@ -132,6 +132,7 @@ namespace MVT {
 		slang::TargetDesc targetDesc{};
 		targetDesc.format = SlangCompileTarget::SLANG_SPIRV;
 		targetDesc.profile = spirv_1_4;
+		targetDesc.flags = SLANG_TARGET_FLAG_GENERATE_WHOLE_PROGRAM;
 		m_SessionDescription.targets = &targetDesc;
 		m_SessionDescription.targetCount = 1;
 
@@ -142,11 +143,19 @@ namespace MVT {
 		m_SessionDescription.preprocessorMacros = preprocessorMacroDesc.data();
 		m_SessionDescription.preprocessorMacroCount = preprocessorMacroDesc.size();
 
-		std::array<slang::CompilerOptionEntry, 1> options =
+		std::array options =
 		{
-			{
+			slang::CompilerOptionEntry {
 				slang::CompilerOptionName::EmitSpirvDirectly,
 				{slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
+			},
+			slang::CompilerOptionEntry {
+				slang::CompilerOptionName::MatrixLayoutColumn,
+				{slang::CompilerOptionValueKind::Int, 1, 0, nullptr, nullptr}
+			},
+			slang::CompilerOptionEntry {
+				slang::CompilerOptionName::MatrixLayoutRow,
+				{slang::CompilerOptionValueKind::Int, 0, 0, nullptr, nullptr}
 			}
 		};
 		m_SessionDescription.compilerOptionEntries = options.data();
