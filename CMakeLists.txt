@@ -40,6 +40,7 @@ set(SOURCES
 		Sources/VmaBuffer.cpp
 		Includes/MVT/VmaBuffer.hpp
 		Includes/MVT/UniformBufferObject.hpp
+		Sources/STB_ThirdParty.cpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
@@ -54,6 +55,7 @@ target_compile_definitions(${PROJECT_NAME} PUBLIC VULKAN_HPP_NO_STRUCT_CONSTRUCT
 
 target_include_directories(${PROJECT_NAME} PUBLIC Includes)
 target_include_directories(${PROJECT_NAME} PRIVATE Sources)
+target_include_directories(${PROJECT_NAME} PUBLIC ThirdParty)
 
 target_compile_features(${PROJECT_NAME} PUBLIC cxx_std_20)
 

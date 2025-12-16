@@ -34,6 +34,12 @@ namespace MVT {
 		bool Resizable;
 	};
 
+	enum class QueueType {
+		Graphics,
+		Present,
+		Transfer,
+	};
+
 	class Application {
 	public: // Vulkan Specific
 		static inline constexpr int MAX_FRAMES_IN_FLIGHT = 2;
@@ -116,6 +122,12 @@ namespace MVT {
 
 		void createCommandPool();
 
+		void createTextureImage();
+
+		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
+
+		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
+
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory);
 
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory, const std::vector<uint32_t> &families);
@@ -160,6 +172,10 @@ namespace MVT {
 
 		void transition_image_layout(uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask);
 
+		void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type);
+
+		void copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, QueueType queue);
+
 		vk::SurfaceFormatKHR chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats);
 
 		vk::PresentModeKHR chooseSwapPresentMode(const std::vector<vk::PresentModeKHR> &availablePresentModes);
@@ -170,11 +186,19 @@ namespace MVT {
 
 		uint32_t findMemoryType(uint32_t typeFilter, vk::MemoryPropertyFlags properties);
 
-		void copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, vk::DeviceSize size, vk::Fence fence);
+		void copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, vk::DeviceSize size, vk::Fence fence, vk::CommandPool pool, vk::Queue queue);
 
 		void cleanupSwapChain();
 
 		void recreateSwapChain();
+
+		vk::raii::CommandBuffer beginSingleTimeCommands(QueueType type);
+
+		vk::raii::CommandBuffer beginSingleTimeCommands(vk::CommandPool pool);
+
+		void endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, QueueType type, bool fence = false);
+
+		void endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, vk::Queue queue, vk::Fence fence = nullptr);
 
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
@@ -220,10 +244,13 @@ namespace MVT {
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 
 		vk::raii::CommandPool transfersPool = nullptr;
-		std::vector<vk::raii::CommandBuffer> transferCommands{};
+		// std::vector<vk::raii::CommandBuffer> transferCommands{};
 		vk::raii::Fence transferFence = nullptr;
 
 		vk::raii::CommandPool commandPool = nullptr;
+
+		vk::raii::Image textureImage = nullptr;
+		vk::raii::DeviceMemory textureImageMemory = nullptr;
 
 		vk::raii::Buffer vertexBuffer = nullptr;
 		vk::raii::DeviceMemory vertexBufferMemory = nullptr;

@@ -4,15 +4,16 @@
 
 #include "MVT/Application.hpp"
 
-#include <vulkan/vulkan.hpp>
-#include <SDL3/SDL.h>
-#include <SDL3/SDL_vulkan.h>
-#include <iostream>
-#include <stdexcept>
-#include <cstdlib>
-#include <utility>
 #include <algorithm>
 #include <chrono>
+#include <cstdlib>
+#include <iostream>
+#include <stb_image.h>
+#include <stdexcept>
+#include <utility>
+#include <SDL3/SDL.h>
+#include <SDL3/SDL_vulkan.h>
+#include <vulkan/vulkan.hpp>
 
 #include "MVT/GLM.hpp"
 #include "MVT/Mesh.hpp"
@@ -74,6 +75,8 @@ namespace MVT {
 		createCommandPool();
 		createCommandBuffer();
 		createSyncObjects();
+
+		createTextureImage();
 
 		createVertexBuffer(rectangle_vertices);
 		createIndexBuffer(rectangle_indices);
@@ -168,8 +171,11 @@ namespace MVT {
 		inFlightFences.clear();
 		transferFence.clear();
 
+		textureImageMemory.clear();
+		textureImage.clear();
+
 		commandBuffers.clear();
-		transferCommands.clear();
+		// transferCommands.clear();
 
 		commandPool.clear();
 		transfersPool.clear();
@@ -706,6 +712,57 @@ namespace MVT {
 		}
 	}
 
+	void Application::createTextureImage() {
+		int texWidth, texHeight, texChannels;
+		stbi_uc *const pixels = stbi_load("EngineAssets/Textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		vk::DeviceSize imageSize = texWidth * texHeight * 4;
+
+		if (!pixels) {
+			throw std::runtime_error("failed to load texture image!");
+		}
+
+		vk::raii::Buffer stagingBuffer({});
+		vk::raii::DeviceMemory stagingBufferMemory({});
+
+		createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
+
+		void *data = stagingBufferMemory.mapMemory(0, imageSize);
+		memcpy(data, pixels, imageSize);
+		stagingBufferMemory.unmapMemory();
+
+		stbi_image_free(pixels);
+
+		vk::raii::Image textureImageTemp({});
+		vk::raii::DeviceMemory textureImageMemoryTemp({});
+		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp, {transferFamily, graphicsFamily});
+	}
+
+	void Application::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
+		createImage(width, height, format, tiling, usage, properties, image, imageMemory, {graphicsFamily});
+	}
+
+	void Application::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families) {
+		vk::ImageCreateInfo imageInfo{
+			.imageType = vk::ImageType::e2D, .format = format,
+			.extent = {width, height, 1}, .mipLevels = 1, .arrayLayers = 1,
+			.samples = vk::SampleCountFlagBits::e1, .tiling = tiling,
+			.usage = usage,
+			.sharingMode = families.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
+			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
+			.pQueueFamilyIndices = families.data()
+		};
+
+		image = vk::raii::Image(device, imageInfo);
+
+		vk::MemoryRequirements memRequirements = image.getMemoryRequirements();
+		vk::MemoryAllocateInfo allocInfo{
+			.allocationSize = memRequirements.size,
+			.memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)
+		};
+		imageMemory = vk::raii::DeviceMemory(device, allocInfo);
+		image.bindMemory(imageMemory, 0);
+	}
+
 	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory) {
 		createBuffer(size, usage, properties, buffer, bufferMemory, {graphicsFamily});
 	}
@@ -733,37 +790,19 @@ namespace MVT {
 	}
 
 	void Application::createVertexBuffer(const Vertex *vertices, const uint64_t count) {
-		const std::array families = {graphicsFamily, transferFamily};
+		const vk::DeviceSize bufferSize = sizeof(Vertex) * count;
 
-		// vk::DeviceSize bufferSize = sizeof(vertices[0]) * vertices.size();
-		// createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, vertexBuffer, vertexBufferMemory);
-		// void* data = vertexBufferMemory.mapMemory(0, bufferSize);
-		// memcpy(data, vertices.data(), bufferSize);
-		// vertexBufferMemory.unmapMemory();
+		vk::raii::Buffer stagingBuffer = nullptr;
+		vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
 
-		vk::DeviceSize bufferSize = sizeof(Vertex) * count;
-
-		vk::BufferCreateInfo stagingInfo{.size = bufferSize, .usage = vk::BufferUsageFlagBits::eTransferSrc, .sharingMode = vk::SharingMode::eExclusive};
-		vk::raii::Buffer stagingBuffer(device, stagingInfo);
-		vk::MemoryRequirements memRequirementsStaging = stagingBuffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo memoryAllocateInfoStaging{.allocationSize = memRequirementsStaging.size, .memoryTypeIndex = findMemoryType(memRequirementsStaging.memoryTypeBits, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent)};
-		vk::raii::DeviceMemory stagingBufferMemory(device, memoryAllocateInfoStaging);
-
-		stagingBuffer.bindMemory(stagingBufferMemory, 0);
-		void *dataStaging = stagingBufferMemory.mapMemory(0, stagingInfo.size);
-		memcpy(dataStaging, vertices, stagingInfo.size);
+		void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+		memcpy(dataStaging, vertices, bufferSize);
 		stagingBufferMemory.unmapMemory();
 
-		vk::BufferCreateInfo bufferInfo{.size = bufferSize, .usage = vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, .sharingMode = vk::SharingMode::eConcurrent, .queueFamilyIndexCount = families.size(), .pQueueFamilyIndices = families.data()};
-		vertexBuffer = vk::raii::Buffer(device, bufferInfo);
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory, {graphicsFamily, transferFamily});
 
-		vk::MemoryRequirements memRequirements = vertexBuffer.getMemoryRequirements();
-		vk::MemoryAllocateInfo memoryAllocateInfo{.allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, vk::MemoryPropertyFlagBits::eDeviceLocal)};
-		vertexBufferMemory = vk::raii::DeviceMemory(device, memoryAllocateInfo);
-
-		vertexBuffer.bindMemory(*vertexBufferMemory, 0);
-
-		copyBuffer(stagingBuffer, vertexBuffer, stagingInfo.size, transferFence);
+		copyBuffer(stagingBuffer, vertexBuffer, bufferSize, transferFence, transfersPool, transferQueue);
 
 		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
 		assert(result == vk::Result::eSuccess);
@@ -784,7 +823,7 @@ namespace MVT {
 
 		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer, indexBufferMemory, {graphicsFamily, transferFamily});
 
-		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence);
+		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence, transfersPool, transferQueue);
 
 		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
 		assert(result == vk::Result::eSuccess);
@@ -880,11 +919,12 @@ namespace MVT {
 	void Application::createCommandBuffer() { {
 			vk::CommandBufferAllocateInfo allocInfo{.commandPool = commandPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
 			commandBuffers = vk::raii::CommandBuffers(device, allocInfo);
-		} {
-			vk::CommandBufferAllocateInfo allocInfo{.commandPool = transfersPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
-			transferCommands = vk::raii::CommandBuffers(device, allocInfo);
-			assert(transferCommands.size() == MAX_FRAMES_IN_FLIGHT);
 		}
+		// {
+		// 	vk::CommandBufferAllocateInfo allocInfo{.commandPool = transfersPool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = MAX_FRAMES_IN_FLIGHT};
+		// 	transferCommands = vk::raii::CommandBuffers(device, allocInfo);
+		// 	assert(transferCommands.size() == MAX_FRAMES_IN_FLIGHT);
+		// }
 	}
 
 	void Application::createSyncObjects() {
@@ -909,7 +949,6 @@ namespace MVT {
 	}
 
 	void Application::recordCommandBuffer(const uint32_t imageIndex) {
-
 		commandBuffers[currentFrame].begin({});
 
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
@@ -983,8 +1022,8 @@ namespace MVT {
 		// ubo.proj = glm::identity<glm::mat4x4>();
 
 		ubo.model = rotate(glm::mat4(1.0f), time * glm::radians(90.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.view  = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
-		ubo.proj  = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
+		ubo.view = lookAt(glm::vec3(2.0f, 2.0f, 2.0f), glm::vec3(0.0f, 0.0f, 0.0f), glm::vec3(0.0f, 0.0f, 1.0f));
+		ubo.proj = glm::perspective(glm::radians(45.0f), static_cast<float>(swapChainExtent.width) / static_cast<float>(swapChainExtent.height), 0.1f, 10.0f);
 		ubo.proj[1][1] *= -1;
 
 
@@ -1026,6 +1065,41 @@ namespace MVT {
 		};
 
 		commandBuffers[currentFrame].pipelineBarrier2(dependencyInfo);
+	}
+
+	void Application::transitionImageLayout(const vk::raii::Image &image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type) {
+		vk::PipelineStageFlags sourceStage;
+		vk::PipelineStageFlags destinationStage;
+		vk::ImageMemoryBarrier barrier{.oldLayout = oldLayout, .newLayout = newLayout, .image = image, .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}};
+
+		if (oldLayout == vk::ImageLayout::eUndefined && newLayout == vk::ImageLayout::eTransferDstOptimal) {
+			barrier.srcAccessMask = {};
+			barrier.dstAccessMask = vk::AccessFlagBits::eTransferWrite;
+
+			sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
+			destinationStage = vk::PipelineStageFlagBits::eTransfer;
+		}
+		else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
+			barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
+			barrier.dstAccessMask = vk::AccessFlagBits::eShaderRead;
+
+			sourceStage = vk::PipelineStageFlagBits::eTransfer;
+			destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+		}
+		else {
+			throw std::invalid_argument("unsupported layout transition!");
+		}
+
+		auto cmd = beginSingleTimeCommands(type);
+		cmd.pipelineBarrier(sourceStage, destinationStage, {}, {}, nullptr, barrier);
+		endSingleTimeCommands(cmd, type, false);
+	}
+
+	void Application::copyBufferToImage(const vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, QueueType queue) {
+		auto cmd = beginSingleTimeCommands(queue);
+		vk::BufferImageCopy region{.bufferOffset = 0, .bufferRowLength = 0, .bufferImageHeight = 0, .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1}, .imageOffset = {0, 0, 0}, .imageExtent = {width, height, 1}};
+		cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
+		endSingleTimeCommands(cmd, queue, true);
 	}
 
 	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
@@ -1082,11 +1156,12 @@ namespace MVT {
 		throw std::runtime_error("failed to find suitable memory type!");
 	}
 
-	void Application::copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, const vk::DeviceSize size, vk::Fence fence) {
-		transferCommands[currentFrame].begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
-		transferCommands[currentFrame].copyBuffer(srcBuffer, vk_buffer, vk::BufferCopy(0, 0, size));
-		transferCommands[currentFrame].end();
-		transferQueue.submit(vk::SubmitInfo{.commandBufferCount = 1, .pCommandBuffers = &*transferCommands[currentFrame]}, fence);
+	void Application::copyBuffer(const vk::raii::Buffer &srcBuffer, const vk::raii::Buffer &vk_buffer, const vk::DeviceSize size, vk::Fence fence, vk::CommandPool pool, vk::Queue queue) {
+		auto cmd = beginSingleTimeCommands(pool);
+		assert(*cmd);
+		// transferCommands[currentFrame].begin(vk::CommandBufferBeginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit});
+		cmd.copyBuffer(srcBuffer, vk_buffer, vk::BufferCopy(0, 0, size));
+		endSingleTimeCommands(cmd, queue, fence);
 	}
 
 	void Application::cleanupSwapChain() {
@@ -1102,6 +1177,55 @@ namespace MVT {
 
 		createSwapChain();
 		createSwapChainViews();
+	}
+
+	vk::raii::CommandBuffer Application::beginSingleTimeCommands(QueueType type) {
+		switch (type) {
+			case QueueType::Present:
+				return beginSingleTimeCommands(commandPool);
+				break;
+			case QueueType::Transfer:
+				return beginSingleTimeCommands(transfersPool);
+				break;
+			default:
+			case QueueType::Graphics:
+				return beginSingleTimeCommands(commandPool);
+				break;
+		}
+
+		return beginSingleTimeCommands(commandPool);
+	}
+
+	vk::raii::CommandBuffer Application::beginSingleTimeCommands(vk::CommandPool pool) {
+		vk::CommandBufferAllocateInfo allocInfo{.commandPool = pool, .level = vk::CommandBufferLevel::ePrimary, .commandBufferCount = 1};
+		vk::raii::CommandBuffer commandBuffer = std::move(device.allocateCommandBuffers(allocInfo).front());
+
+		vk::CommandBufferBeginInfo beginInfo{.flags = vk::CommandBufferUsageFlagBits::eOneTimeSubmit};
+		commandBuffer.begin(beginInfo);
+
+		return commandBuffer;
+	}
+
+	void Application::endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, QueueType type, bool fence) {
+		switch (type) {
+			case QueueType::Graphics:
+				endSingleTimeCommands(commandBuffer, graphicsQueue, nullptr);
+				break;
+			case QueueType::Present:
+				endSingleTimeCommands(commandBuffer, presentQueue, nullptr);
+				break;
+			case QueueType::Transfer:
+				endSingleTimeCommands(commandBuffer, transferQueue, fence ? *transferFence : nullptr);
+				break;
+		}
+	}
+
+	void Application::endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, vk::Queue queue, vk::Fence fence) {
+		commandBuffer.end();
+
+		vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &*commandBuffer};
+		queue.submit(submitInfo, fence);
+		queue.waitIdle();
 	}
 
 	std::vector<const char *> Application::GetExtensions() {
