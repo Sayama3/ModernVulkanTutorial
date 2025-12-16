@@ -16,10 +16,9 @@
 #define GLM_FORCE_DEPTH_ZERO_TO_ONE 1
 #endif // GLM_FORCE_DEPTH_ZERO_TO_ONE
 
-// TODO: I prefer Left Handed coordinate so switch to that later on.
-// #ifndef GLM_FORCE_LEFT_HANDED
-// #define GLM_FORCE_LEFT_HANDED 1
-// #endif // GLM_FORCE_LEFT_HANDED
+#ifndef GLM_FORCE_LEFT_HANDED
+#define GLM_FORCE_LEFT_HANDED 1
+#endif // GLM_FORCE_LEFT_HANDED
 
 #include <glm/glm.hpp>
 #include <glm/gtc/matrix_transform.hpp>
