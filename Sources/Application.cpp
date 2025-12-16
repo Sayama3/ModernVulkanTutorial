@@ -86,6 +86,8 @@ namespace MVT {
 	}
 
 	void Application::mainLoop() {
+		const auto shaderFile = std::filesystem::path{"./EngineAssets/Shaders/mesh.slang"};
+		auto date = std::filesystem::last_write_time(shaderFile);
 		while (!m_ShouldClose) {
 			// Handle SDL Events
 			{
@@ -121,6 +123,14 @@ namespace MVT {
 						};
 					}
 				}
+			}
+
+			auto newDate = std::filesystem::last_write_time(shaderFile);
+			if (newDate > date) {
+				device.waitIdle();
+				createGraphicsPipeline();
+				std::cout << "Hot Reload Shader" << std::endl;
+				date = newDate;
 			}
 
 			if (!windowMinimized) {
@@ -197,6 +207,11 @@ namespace MVT {
 	}
 
 	void Application::drawFrame() {
+		if (!*graphicsPipeline) {
+			std::cerr << "No Graphics Pipeline available." << std::endl;
+			return;
+		}
+
 		while (vk::Result::eTimeout == device.waitForFences(*inFlightFences[currentFrame], vk::True, UINT64_MAX)) {
 			std::cerr << "Waiting for 'inFlightFences' timed out. Waiting again." << std::endl;
 		}
@@ -606,7 +621,13 @@ namespace MVT {
 	void Application::createGraphicsPipeline() {
 		//Basic code, we could upgrade it with an all-in-one function that seatch and find every function name in the slang shader available.
 
-		auto spirvCode = SlangCompiler::s_Compile("mesh");
+		auto spirvCode = SlangCompiler::s_OneShotCompile("mesh");
+		if (spirvCode.has_error()) {
+			std::cerr << "Fail to compile mesh.slang" << std::endl;
+			return;
+		}
+
+
 		auto shaderModule = createShaderModule(spirvCode.value());
 
 		vk::PipelineShaderStageCreateInfo vertShaderStageInfo{.stage = vk::ShaderStageFlagBits::eVertex, .module = shaderModule, .pName = "vertMain"};
@@ -888,6 +909,7 @@ namespace MVT {
 	}
 
 	void Application::recordCommandBuffer(const uint32_t imageIndex) {
+
 		commandBuffers[currentFrame].begin({});
 
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
