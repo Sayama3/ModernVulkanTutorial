@@ -68,7 +68,6 @@ namespace MVT {
 
 		createSwapChain();
 		createSwapChainViews();
-
 		createDepthResources();
 
 		createDescriptorSetLayout();
@@ -749,6 +748,10 @@ namespace MVT {
 		// One memory allocation for all the depths images needed.
 		depthFormat = findDepthFormat();
 
+		depthImageViews.clear();
+		depthImageMemory.clear();
+		depthImages.clear();
+
 		depthImages.reserve(depthCount);
 		depthImageViews.reserve(depthCount);
 
@@ -1376,6 +1379,7 @@ namespace MVT {
 
 		createSwapChain();
 		createSwapChainViews();
+		createDepthResources();
 	}
 
 	vk::raii::CommandBuffer Application::beginSingleTimeCommands(QueueType type) {
