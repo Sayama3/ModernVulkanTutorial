@@ -122,9 +122,17 @@ namespace MVT {
 
 		void createCommandPool();
 
+		void createDepthResources();
+
 		void createTextureImage();
 
 		void createTextureImageView();
+
+		vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
+
+		vk::Format findDepthFormat();
+
+		bool hasStencilComponent(vk::Format format);
 
 		void createTextureSampler();
 
@@ -132,7 +140,7 @@ namespace MVT {
 
 		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
 
-		vk::raii::ImageView createImageView(vk::Image image, vk::Format format);
+		vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags imageAspect);
 
 		vk::raii::Sampler createImageSampler();
 
@@ -180,7 +188,7 @@ namespace MVT {
 
 		void updateUniformBuffer(uint32_t currentImage);
 
-		void transition_image_layout(uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask);
+		void transition_image_layout(vk::Image image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask, vk::ImageAspectFlags image_aspect_flags);
 
 		// void transferBufferQueue(const vk::Buffer &buffer, QueueType oldQueue, QueueType newQueue, vk::PipelineStageFlags src = vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlags dst = vk::PipelineStageFlagBits::eAllCommands);
 
@@ -263,6 +271,13 @@ namespace MVT {
 
 		vk::raii::CommandPool commandPool = nullptr;
 
+		uint64_t depthCount = 2;
+
+		vk::Format depthFormat;
+		std::vector<vk::raii::Image> depthImages{};
+		vk::raii::DeviceMemory depthImageMemory = nullptr;
+		std::vector<vk::raii::ImageView> depthImageViews{};
+
 		vk::raii::Image textureImage = nullptr;
 		vk::raii::DeviceMemory textureImageMemory = nullptr;
 		vk::raii::ImageView textureView = nullptr;
@@ -273,6 +288,7 @@ namespace MVT {
 
 		vk::raii::Buffer indexBuffer = nullptr;
 		vk::raii::DeviceMemory indexBufferMemory = nullptr;
+		uint32_t indices_count = 0;
 
 		std::vector<vk::raii::Buffer> uniformBuffers;
 		std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
@@ -287,6 +303,7 @@ namespace MVT {
 		// Frame in Flights parameters
 		uint32_t semaphoreIndex{0};
 		uint32_t currentFrame{0};
+		uint64_t frameCount{0};
 		std::vector<vk::raii::CommandBuffer> commandBuffers = {};
 		std::vector<vk::raii::Semaphore> presentCompleteSemaphores = {};
 		std::vector<vk::raii::Semaphore> renderFinishedSemaphores = {};

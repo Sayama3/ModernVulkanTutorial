@@ -12,7 +12,7 @@
 namespace MVT {
 
 	struct Vertex {
-		glm::vec2 pos;
+		glm::vec3 pos;
 		glm::vec3 color;
 		glm::vec2 uv;
 
@@ -22,7 +22,7 @@ namespace MVT {
 
 		static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions(const uint32_t binding = 0) {
 			return {
-				vk::VertexInputAttributeDescription( 0, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos) ),
+				vk::VertexInputAttributeDescription( 0, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, pos) ),
 				vk::VertexInputAttributeDescription( 1, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) ),
 				vk::VertexInputAttributeDescription( 2, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv) )
 			};
@@ -36,14 +36,31 @@ namespace MVT {
 	// };
 
 	inline constexpr std::array rectangle_vertices = {
-	Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
-	Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
-	Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
-	Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
+	Vertex{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	Vertex{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	Vertex{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	Vertex{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 	};
 
 	inline constexpr std::array rectangle_indices = {
 		0u, 1u, 2u, 2u, 3u, 0u
+	};
+
+	inline constexpr std::array two_rectangle_vertices = {
+	Vertex{{-0.5f, -0.5f, 0.0f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	Vertex{{0.5f, -0.5f, 0.0f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	Vertex{{0.5f, 0.5f, 0.0f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+		Vertex{{-0.5f, 0.5f, 0.0f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}},
+
+	Vertex{{-0.5f, -0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {0.0f, 0.0f}},
+	Vertex{{0.5f, -0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {1.0f, 0.0f}},
+	Vertex{{0.5f, 0.5f, -0.5f}, {0.0f, 0.0f, 1.0f}, {1.0f, 1.0f}},
+	Vertex{{-0.5f, 0.5f, -0.5f}, {1.0f, 1.0f, 1.0f}, {0.0f, 1.0f}},
+	};
+
+	inline constexpr std::array two_rectangle_indices = {
+		0u, 1u, 2u, 2u, 3u, 0u,
+		4u, 5u, 6u, 6u, 7u, 4u,
 	};
 
 	struct Mesh {
