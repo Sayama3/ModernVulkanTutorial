@@ -14,15 +14,17 @@ namespace MVT {
 	struct Vertex {
 		glm::vec2 pos;
 		glm::vec3 color;
+		glm::vec2 uv;
 
 		static vk::VertexInputBindingDescription getBindingDescription(const uint32_t binding = 0) {
 			return { binding, sizeof(Vertex), vk::VertexInputRate::eVertex };
 		}
 
-		static std::array<vk::VertexInputAttributeDescription, 2> getAttributeDescriptions(const uint32_t binding = 0) {
+		static std::array<vk::VertexInputAttributeDescription, 3> getAttributeDescriptions(const uint32_t binding = 0) {
 			return {
 				vk::VertexInputAttributeDescription( 0, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, pos) ),
-				vk::VertexInputAttributeDescription( 1, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) )
+				vk::VertexInputAttributeDescription( 1, binding, vk::Format::eR32G32B32Sfloat, offsetof(Vertex, color) ),
+				vk::VertexInputAttributeDescription( 2, binding, vk::Format::eR32G32Sfloat, offsetof(Vertex, uv) )
 			};
 		}
 	};
@@ -34,10 +36,10 @@ namespace MVT {
 	// };
 
 	inline constexpr std::array rectangle_vertices = {
-	Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}},
-	Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}},
-	Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}},
-	Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}}
+	Vertex{{-0.5f, -0.5f}, {1.0f, 0.0f, 0.0f}, {1.0f, 0.0f}},
+	Vertex{{0.5f, -0.5f}, {0.0f, 1.0f, 0.0f}, {0.0f, 0.0f}},
+	Vertex{{0.5f, 0.5f}, {0.0f, 0.0f, 1.0f}, {0.0f, 1.0f}},
+	Vertex{{-0.5f, 0.5f}, {1.0f, 1.0f, 1.0f}, {1.0f, 1.0f}}
 	};
 
 	inline constexpr std::array rectangle_indices = {

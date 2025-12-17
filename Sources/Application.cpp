@@ -77,6 +77,8 @@ namespace MVT {
 		createSyncObjects();
 
 		createTextureImage();
+		createTextureImageView();
+		createTextureSampler();
 
 		createVertexBuffer(rectangle_vertices);
 		createIndexBuffer(rectangle_indices);
@@ -171,6 +173,8 @@ namespace MVT {
 		inFlightFences.clear();
 		transferFence.clear();
 
+		textureSampler.clear();
+		textureView.clear();
 		textureImageMemory.clear();
 		textureImage.clear();
 
@@ -377,13 +381,18 @@ namespace MVT {
 			return false;
 		}
 
-		// Discrete GPUs have a significant performance advantage
-		if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
-			score += 1000;
+		// // Application can't function without Anisotropy Sampler
+		if (deviceFeatures.samplerAnisotropy) {
+			score += 10;
 		}
 
 		// Maximum possible size of textures affects graphics quality
 		score += deviceProperties.limits.maxImageDimension2D;
+
+		// Discrete GPUs have a significant performance advantage
+		if (deviceProperties.deviceType == vk::PhysicalDeviceType::eDiscreteGpu) {
+			score *= 10;
+		}
 
 		return true;
 	}
@@ -408,6 +417,8 @@ namespace MVT {
 		// Check if the best candidate is suitable at all
 		if (candidates.rbegin()->first > 0) {
 			physicalDevice = candidates.rbegin()->second;
+			const auto properties = physicalDevice.getProperties();
+			std::cout << "Select GPU '" << &properties.deviceName[0] << "'" << std::endl;
 		}
 		else {
 			throw std::runtime_error("[Vulkan] failed to find a suitable GPU!");
@@ -498,7 +509,7 @@ namespace MVT {
 
 		// Create a chain of feature structures
 		vk::StructureChain<vk::PhysicalDeviceFeatures2, vk::PhysicalDeviceVulkan13Features, vk::PhysicalDeviceExtendedDynamicStateFeaturesEXT> featureChain = {
-			{}, // vk::PhysicalDeviceFeatures2 (empty for now)
+			{.features = {.samplerAnisotropy = physicalDeviceFeatures.samplerAnisotropy } }, // vk::PhysicalDeviceFeatures2 (empty for now)
 			{.synchronization2 = true, .dynamicRendering = true,}, // Enable dynamic rendering from Vulkan 1.3
 			{.extendedDynamicState = true} // Enable extended dynamic state from the extension
 		};
@@ -602,24 +613,22 @@ namespace MVT {
 
 	void Application::createSwapChainViews() {
 		swapChainImageViews.clear();
-
-		vk::ImageViewCreateInfo imageViewCreateInfo{
-			.viewType = vk::ImageViewType::e2D,
-			.format = swapChainImageFormat,
-			.subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
-		};
+		swapChainImageViews.reserve(swapChainImages.size());
 
 		for (vk::Image image: swapChainImages) {
-			imageViewCreateInfo.image = image;
-			swapChainImageViews.emplace_back(device, imageViewCreateInfo);
+			swapChainImageViews.push_back(createImageView(image, swapChainImageFormat));
 		}
 	}
 
 	void Application::createDescriptorSetLayout() {
-		vk::DescriptorSetLayoutBinding uboLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr);
+		std::array bindings {
+			vk::DescriptorSetLayoutBinding(0, vk::DescriptorType::eUniformBuffer, 1, vk::ShaderStageFlagBits::eVertex, nullptr),
+			vk::DescriptorSetLayoutBinding(1, vk::DescriptorType::eCombinedImageSampler, 1, vk::ShaderStageFlagBits::eFragment, nullptr),
+		};
+
 		vk::DescriptorSetLayoutCreateInfo layoutInfo{
-			.bindingCount = 1,
-			.pBindings = &uboLayoutBinding,
+			.bindingCount = bindings.size(),
+			.pBindings = bindings.data(),
 		};
 		descriptorSetLayout = vk::raii::DescriptorSetLayout(device, layoutInfo);
 	}
@@ -702,8 +711,7 @@ namespace MVT {
 		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
-	void Application::createCommandPool() {
-		{
+	void Application::createCommandPool() { {
 			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
 			commandPool = vk::raii::CommandPool(device, poolInfo);
 		}
@@ -734,13 +742,21 @@ namespace MVT {
 
 		stbi_image_free(pixels);
 
-		vk::raii::Image textureImageTemp({});
-		vk::raii::DeviceMemory textureImageMemoryTemp({});
-		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp);
+		// vk::raii::Image textureImageTemp({});
+		// vk::raii::DeviceMemory textureImageMemoryTemp({});
+		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage, textureImageMemory);
 
-		transitionImageLayout(textureImageTemp, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer);
-		copyBufferToImage(stagingBuffer, textureImageTemp, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
-		transitionImageLayout(textureImageTemp, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, QueueType::Graphics);
+		transitionImageLayout(textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer);
+		copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
+		transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, QueueType::Graphics);
+	}
+
+	void Application::createTextureImageView() {
+		textureView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb);
+	}
+
+	void Application::createTextureSampler() {
+		textureSampler = createImageSampler();
 	}
 
 	void Application::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
@@ -767,6 +783,35 @@ namespace MVT {
 		};
 		imageMemory = vk::raii::DeviceMemory(device, allocInfo);
 		image.bindMemory(imageMemory, 0);
+	}
+
+	vk::raii::ImageView Application::createImageView(vk::Image image, vk::Format format) {
+		vk::ImageViewCreateInfo viewInfo{
+			.image = image, .viewType = vk::ImageViewType::e2D,
+			.format = format, .subresourceRange = {vk::ImageAspectFlagBits::eColor, 0, 1, 0, 1}
+		};
+		return vk::raii::ImageView(device, viewInfo);
+	}
+
+	vk::raii::Sampler Application::createImageSampler() {
+		vk::SamplerCreateInfo samplerInfo{
+			.magFilter = vk::Filter::eLinear, .minFilter = vk::Filter::eLinear, .mipmapMode = vk::SamplerMipmapMode::eLinear,
+			.addressModeU = vk::SamplerAddressMode::eRepeat, .addressModeV = vk::SamplerAddressMode::eRepeat, .addressModeW = vk::SamplerAddressMode::eRepeat,
+			.anisotropyEnable = vk::False, .maxAnisotropy = 1.0f,
+			.compareEnable = vk::False, .compareOp = vk::CompareOp::eAlways,
+			.unnormalizedCoordinates = vk::False,
+		};
+
+		vk::PhysicalDeviceFeatures supportedFeatures = physicalDevice.getFeatures();
+		if (supportedFeatures.samplerAnisotropy) {
+			vk::PhysicalDeviceProperties properties = physicalDevice.getProperties();
+			samplerInfo.anisotropyEnable = vk::True;
+			samplerInfo.maxAnisotropy = properties.limits.maxSamplerAnisotropy;
+		}
+
+		return vk::raii::Sampler{
+			device, samplerInfo
+		};
 	}
 
 	void Application::createBuffer(const vk::DeviceSize size, const vk::BufferUsageFlags usage, const vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory) {
@@ -812,12 +857,11 @@ namespace MVT {
 		memcpy(dataStaging, vertices, bufferSize);
 		stagingBufferMemory.unmapMemory();
 
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory);
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory);
 
-		copyBuffer(stagingBuffer, vertexBuffer, bufferSize, transferFence, commandPool,graphicsQueue);
+		copyBuffer(stagingBuffer, vertexBuffer, bufferSize, transferFence, commandPool, graphicsQueue);
 		waitAndResetFence();
 		//transferBufferQueue(vertexBuffer, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
-
 	}
 
 	void Application::createIndexBuffer(const uint32_t *indices, const uint32_t count) {
@@ -858,9 +902,12 @@ namespace MVT {
 	}
 
 	void Application::createDescriptorPool() {
-		vk::DescriptorPoolSize poolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT);
+		std::array poolSize {
+			vk::DescriptorPoolSize(vk::DescriptorType::eUniformBuffer, MAX_FRAMES_IN_FLIGHT),
+			vk::DescriptorPoolSize(vk::DescriptorType::eCombinedImageSampler, MAX_FRAMES_IN_FLIGHT),
+		};
 
-		vk::DescriptorPoolCreateInfo poolInfo{.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, .maxSets = MAX_FRAMES_IN_FLIGHT, .poolSizeCount = 1, .pPoolSizes = &poolSize};
+		vk::DescriptorPoolCreateInfo poolInfo{.flags = vk::DescriptorPoolCreateFlagBits::eFreeDescriptorSet, .maxSets = MAX_FRAMES_IN_FLIGHT, .poolSizeCount = poolSize.size(), .pPoolSizes = poolSize.data()};
 
 		descriptorPool = vk::raii::DescriptorPool(device, poolInfo);
 	}
@@ -873,8 +920,13 @@ namespace MVT {
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			vk::DescriptorBufferInfo bufferInfo{.buffer = uniformBuffers[i], .offset = 0, .range = sizeof(UniformBufferObject)};
-			vk::WriteDescriptorSet descriptorWrite{.dstSet = descriptorSets[i], .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo};
-			device.updateDescriptorSets(descriptorWrite, {});
+			vk::DescriptorImageInfo imageInfo{ .sampler = textureSampler, .imageView = textureView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+
+			std::array descriptors {
+				vk::WriteDescriptorSet{.dstSet = descriptorSets[i], .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo},
+				vk::WriteDescriptorSet{.dstSet = descriptorSets[i], .dstBinding = 1, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eCombinedImageSampler, .pImageInfo = &imageInfo},
+			};
+			device.updateDescriptorSets(descriptors, {});
 		}
 	}
 
@@ -1136,7 +1188,6 @@ namespace MVT {
 		// if (queue == QueueType::Graphics) {
 		// 	waitAndResetFence();
 		// }
-
 	}
 
 	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
@@ -1249,8 +1300,8 @@ namespace MVT {
 				endSingleTimeCommands(commandBuffer, presentQueue, nullptr);
 				break;
 			case QueueType::Transfer:
-				// endSingleTimeCommands(commandBuffer, transferQueue, fence ? *transferFence : nullptr);
-				// break;
+			// endSingleTimeCommands(commandBuffer, transferQueue, fence ? *transferFence : nullptr);
+			// break;
 			case QueueType::Graphics:
 				endSingleTimeCommands(commandBuffer, graphicsQueue, fence ? *transferFence : nullptr);
 				break;
@@ -1271,8 +1322,8 @@ namespace MVT {
 				return presentFamily;
 				break;
 			case QueueType::Transfer:
-				// return transferFamily;
-				// break;
+			// return transferFamily;
+			// break;
 			case QueueType::Graphics:
 				return graphicsFamily;
 				break;

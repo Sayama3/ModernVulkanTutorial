@@ -124,9 +124,17 @@ namespace MVT {
 
 		void createTextureImage();
 
+		void createTextureImageView();
+
+		void createTextureSampler();
+
 		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
 
 		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
+
+		vk::raii::ImageView createImageView(vk::Image image, vk::Format format);
+
+		vk::raii::Sampler createImageSampler();
 
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory);
 
@@ -257,6 +265,8 @@ namespace MVT {
 
 		vk::raii::Image textureImage = nullptr;
 		vk::raii::DeviceMemory textureImageMemory = nullptr;
+		vk::raii::ImageView textureView = nullptr;
+		vk::raii::Sampler textureSampler = nullptr;
 
 		vk::raii::Buffer vertexBuffer = nullptr;
 		vk::raii::DeviceMemory vertexBufferMemory = nullptr;
