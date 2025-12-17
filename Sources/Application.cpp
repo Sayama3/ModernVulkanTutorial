@@ -178,7 +178,7 @@ namespace MVT {
 		// transferCommands.clear();
 
 		commandPool.clear();
-		transfersPool.clear();
+		//transfersPool.clear();
 
 		graphicsPipeline.clear();
 
@@ -188,7 +188,7 @@ namespace MVT {
 
 		cleanupSwapChain();
 
-		transferQueue.clear();
+		//transferQueue.clear();
 		presentQueue.clear();
 		graphicsQueue.clear();
 
@@ -469,14 +469,14 @@ namespace MVT {
 			throw std::runtime_error("[Vulkan] Could not find a queue for graphics or present -> terminating");
 		}
 
-		//transferQueue
-		transferFamily = findQueueFamilies(physicalDevice, [](const vk::QueueFamilyProperties &q, uint32_t i) { return q.queueFlags & vk::QueueFlagBits::eTransfer && !(q.queueFlags & vk::QueueFlagBits::eGraphics); });
-		if (transferFamily == queueFamilyProperties.size()) {
-			transferFamily = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eTransfer);
-			if (transferFamily == queueFamilyProperties.size()) {
-				throw std::runtime_error("[Vulkan] Could not find a queue for transfer -> terminating");
-			}
-		}
+		// //transferQueue
+		// transferFamily = findQueueFamilies(physicalDevice, [](const vk::QueueFamilyProperties &q, uint32_t i) { return q.queueFlags & vk::QueueFlagBits::eTransfer && !(q.queueFlags & vk::QueueFlagBits::eGraphics); });
+		// if (transferFamily == queueFamilyProperties.size()) {
+		// 	transferFamily = findQueueFamilies(physicalDevice, vk::QueueFlagBits::eTransfer);
+		// 	if (transferFamily == queueFamilyProperties.size()) {
+		// 		throw std::runtime_error("[Vulkan] Could not find a queue for transfer -> terminating");
+		// 	}
+		// }
 
 		std::vector<vk::DeviceQueueCreateInfo> deviceQueueCreateInfos{vk::DeviceQueueCreateInfo{.queueFamilyIndex = graphicsFamily, .queueCount = 1, .pQueuePriorities = &queuePriority}};
 
@@ -489,10 +489,10 @@ namespace MVT {
 			present = true;
 		}
 
-		if (graphicsFamily != transferFamily && presentFamily != transferFamily) {
-			transfer = true;
-			deviceQueueCreateInfos.push_back(vk::DeviceQueueCreateInfo{.queueFamilyIndex = transferFamily, .queueCount = 1, .pQueuePriorities = &queuePriority});
-		}
+		// if (graphicsFamily != transferFamily && presentFamily != transferFamily) {
+		// 	transfer = true;
+		// 	deviceQueueCreateInfos.push_back(vk::DeviceQueueCreateInfo{.queueFamilyIndex = transferFamily, .queueCount = 1, .pQueuePriorities = &queuePriority});
+		// }
 
 		vk::PhysicalDeviceFeatures physicalDeviceFeatures = physicalDevice.getFeatures();
 
@@ -527,7 +527,7 @@ namespace MVT {
 		device = vk::raii::Device(physicalDevice, deviceCreateInfo);
 		graphicsQueue = vk::raii::Queue(device, graphicsFamily, 0);
 		presentQueue = vk::raii::Queue(device, presentFamily, 0);
-		transferQueue = vk::raii::Queue(device, transferFamily, 0);
+		// transferQueue = vk::raii::Queue(device, transferFamily, 0);
 	}
 
 	void Application::createVMA() {
@@ -702,14 +702,16 @@ namespace MVT {
 		graphicsPipeline = vk::raii::Pipeline(device, nullptr, pipelineInfo);
 	}
 
-	void Application::createCommandPool() { {
+	void Application::createCommandPool() {
+		{
 			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = graphicsFamily};
 			commandPool = vk::raii::CommandPool(device, poolInfo);
-		} {
-			vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = transferFamily};
-			transfersPool = vk::raii::CommandPool(device, poolInfo);
-			assert(*transfersPool);
 		}
+		// {
+		// 	vk::CommandPoolCreateInfo poolInfo{.flags = vk::CommandPoolCreateFlagBits::eResetCommandBuffer, .queueFamilyIndex = transferFamily};
+		// 	transfersPool = vk::raii::CommandPool(device, poolInfo);
+		// 	assert(*transfersPool);
+		// }
 	}
 
 	void Application::createTextureImage() {
@@ -724,7 +726,7 @@ namespace MVT {
 		vk::raii::Buffer stagingBuffer({});
 		vk::raii::DeviceMemory stagingBufferMemory({});
 
-		createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
+		createBuffer(imageSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
 
 		void *data = stagingBufferMemory.mapMemory(0, imageSize);
 		memcpy(data, pixels, imageSize);
@@ -734,7 +736,11 @@ namespace MVT {
 
 		vk::raii::Image textureImageTemp({});
 		vk::raii::DeviceMemory textureImageMemoryTemp({});
-		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp, {transferFamily, graphicsFamily});
+		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImageTemp, textureImageMemoryTemp);
+
+		transitionImageLayout(textureImageTemp, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer);
+		copyBufferToImage(stagingBuffer, textureImageTemp, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
+		transitionImageLayout(textureImageTemp, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, QueueType::Graphics);
 	}
 
 	void Application::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
@@ -789,24 +795,29 @@ namespace MVT {
 		createVertexBuffer(vertices.data(), vertices.size());
 	}
 
+	void Application::waitAndResetFence() {
+		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
+		assert(result == vk::Result::eSuccess);
+		device.resetFences(*transferFence);
+	}
+
 	void Application::createVertexBuffer(const Vertex *vertices, const uint64_t count) {
 		const vk::DeviceSize bufferSize = sizeof(Vertex) * count;
 
 		vk::raii::Buffer stagingBuffer = nullptr;
 		vk::raii::DeviceMemory stagingBufferMemory = nullptr;
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
 
 		void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
 		memcpy(dataStaging, vertices, bufferSize);
 		stagingBufferMemory.unmapMemory();
 
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory, {graphicsFamily, transferFamily});
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer|vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, vertexBuffer, vertexBufferMemory);
 
-		copyBuffer(stagingBuffer, vertexBuffer, bufferSize, transferFence, transfersPool, transferQueue);
+		copyBuffer(stagingBuffer, vertexBuffer, bufferSize, transferFence, commandPool,graphicsQueue);
+		waitAndResetFence();
+		//transferBufferQueue(vertexBuffer, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
 
-		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
-		assert(result == vk::Result::eSuccess);
-		device.resetFences(*transferFence);
 	}
 
 	void Application::createIndexBuffer(const uint32_t *indices, const uint32_t count) {
@@ -815,19 +826,17 @@ namespace MVT {
 		vk::raii::Buffer stagingBuffer({});
 		vk::raii::DeviceMemory stagingBufferMemory({});
 
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory, {transferFamily});
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
 
 		void *data = stagingBufferMemory.mapMemory(0, bufferSize);
 		memcpy(data, indices, (size_t) bufferSize);
 		stagingBufferMemory.unmapMemory();
 
-		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer, indexBufferMemory, {graphicsFamily, transferFamily});
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, indexBuffer, indexBufferMemory);
 
-		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence, transfersPool, transferQueue);
-
-		auto result = device.waitForFences(*transferFence, true, UINT64_MAX);
-		assert(result == vk::Result::eSuccess);
-		device.resetFences(*transferFence);
+		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence, commandPool, graphicsQueue);
+		waitAndResetFence();
+		//transferBufferQueue(indexBuffer, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
 	}
 
 	void Application::createUniformBuffers() {
@@ -878,7 +887,8 @@ namespace MVT {
 
 		const vk::DeviceSize bufferSize = sizeVertices + sizeIndices;
 
-		const std::vector<uint32_t> families = graphicsFamily != transferFamily ? std::vector<uint32_t>{graphicsFamily, transferFamily} : std::vector<uint32_t>{graphicsFamily};
+		// const std::vector<uint32_t> families = graphicsFamily != transferFamily ? std::vector<uint32_t>{graphicsFamily, transferFamily} : std::vector<uint32_t>{graphicsFamily};
+		const std::vector<uint32_t> families = std::vector<uint32_t>{graphicsFamily};
 
 		vk::BufferCreateInfo vBufferInfo{
 			.size = sizeVertices,
@@ -1067,6 +1077,24 @@ namespace MVT {
 		commandBuffers[currentFrame].pipelineBarrier2(dependencyInfo);
 	}
 
+	// void Application::transferBufferQueue(const vk::Buffer &buffer, QueueType oldQueue, QueueType newQueue, vk::PipelineStageFlags src, vk::PipelineStageFlags dst) {
+	//
+	// 	uint32_t oldQ = getFamilyIndex(oldQueue);
+	// 	uint32_t newQ = getFamilyIndex(newQueue);
+	// 	vk::BufferMemoryBarrier barrier {
+	// 		.srcQueueFamilyIndex =oldQ,
+	// 		.dstQueueFamilyIndex = newQ,
+	// 		.buffer = buffer,
+	// 		.offset = 0,
+	// 		.size = vk::WholeSize,
+	// 	};
+	//
+	// 	auto cmd = beginSingleTimeCommands(newQueue);
+	// 	cmd.pipelineBarrier(src, dst, {}, {}, barrier, {});
+	// 	endSingleTimeCommands(cmd, newQueue);
+	// }
+
+
 	void Application::transitionImageLayout(const vk::raii::Image &image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type) {
 		vk::PipelineStageFlags sourceStage;
 		vk::PipelineStageFlags destinationStage;
@@ -1078,6 +1106,8 @@ namespace MVT {
 
 			sourceStage = vk::PipelineStageFlagBits::eTopOfPipe;
 			destinationStage = vk::PipelineStageFlagBits::eTransfer;
+			barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored;
+			barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored;
 		}
 		else if (oldLayout == vk::ImageLayout::eTransferDstOptimal && newLayout == vk::ImageLayout::eShaderReadOnlyOptimal) {
 			barrier.srcAccessMask = vk::AccessFlagBits::eTransferWrite;
@@ -1085,6 +1115,9 @@ namespace MVT {
 
 			sourceStage = vk::PipelineStageFlagBits::eTransfer;
 			destinationStage = vk::PipelineStageFlagBits::eFragmentShader;
+			barrier.srcQueueFamilyIndex = vk::QueueFamilyIgnored; //transferFamily;
+			barrier.dstQueueFamilyIndex = vk::QueueFamilyIgnored; //graphicsFamily;
+			// type = QueueType::Graphics;
 		}
 		else {
 			throw std::invalid_argument("unsupported layout transition!");
@@ -1099,7 +1132,11 @@ namespace MVT {
 		auto cmd = beginSingleTimeCommands(queue);
 		vk::BufferImageCopy region{.bufferOffset = 0, .bufferRowLength = 0, .bufferImageHeight = 0, .imageSubresource = {vk::ImageAspectFlagBits::eColor, 0, 0, 1}, .imageOffset = {0, 0, 0}, .imageExtent = {width, height, 1}};
 		cmd.copyBufferToImage(buffer, image, vk::ImageLayout::eTransferDstOptimal, {region});
-		endSingleTimeCommands(cmd, queue, true);
+		endSingleTimeCommands(cmd, queue, false);
+		// if (queue == QueueType::Graphics) {
+		// 	waitAndResetFence();
+		// }
+
 	}
 
 	vk::SurfaceFormatKHR Application::chooseSwapSurfaceFormat(const std::vector<vk::SurfaceFormatKHR> &availableFormats) {
@@ -1185,9 +1222,9 @@ namespace MVT {
 				return beginSingleTimeCommands(commandPool);
 				break;
 			case QueueType::Transfer:
-				return beginSingleTimeCommands(transfersPool);
-				break;
-			default:
+			// 	return beginSingleTimeCommands(transfersPool);
+			// 	break;
+			// default:
 			case QueueType::Graphics:
 				return beginSingleTimeCommands(commandPool);
 				break;
@@ -1208,14 +1245,14 @@ namespace MVT {
 
 	void Application::endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, QueueType type, bool fence) {
 		switch (type) {
-			case QueueType::Graphics:
-				endSingleTimeCommands(commandBuffer, graphicsQueue, nullptr);
-				break;
 			case QueueType::Present:
 				endSingleTimeCommands(commandBuffer, presentQueue, nullptr);
 				break;
 			case QueueType::Transfer:
-				endSingleTimeCommands(commandBuffer, transferQueue, fence ? *transferFence : nullptr);
+				// endSingleTimeCommands(commandBuffer, transferQueue, fence ? *transferFence : nullptr);
+				// break;
+			case QueueType::Graphics:
+				endSingleTimeCommands(commandBuffer, graphicsQueue, fence ? *transferFence : nullptr);
 				break;
 		}
 	}
@@ -1226,6 +1263,22 @@ namespace MVT {
 		vk::SubmitInfo submitInfo{.commandBufferCount = 1, .pCommandBuffers = &*commandBuffer};
 		queue.submit(submitInfo, fence);
 		queue.waitIdle();
+	}
+
+	uint32_t Application::getFamilyIndex(const QueueType type) const {
+		switch (type) {
+			case QueueType::Present:
+				return presentFamily;
+				break;
+			case QueueType::Transfer:
+				// return transferFamily;
+				// break;
+			case QueueType::Graphics:
+				return graphicsFamily;
+				break;
+		}
+
+		return -1;
 	}
 
 	std::vector<const char *> Application::GetExtensions() {

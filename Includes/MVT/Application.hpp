@@ -140,6 +140,8 @@ namespace MVT {
 
 		void createVertexBuffer(const std::vector<Vertex> &vertices);
 
+		void waitAndResetFence();
+
 		void createVertexBuffer(const Vertex *vertices, uint64_t count);
 
 		template<uint64_t count>
@@ -172,6 +174,8 @@ namespace MVT {
 
 		void transition_image_layout(uint32_t imageIndex, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, vk::AccessFlags2 srcAccessMask, vk::AccessFlags2 dstAccessMask, vk::PipelineStageFlags2 srcStageMask, vk::PipelineStageFlags2 dstStageMask);
 
+		// void transferBufferQueue(const vk::Buffer &buffer, QueueType oldQueue, QueueType newQueue, vk::PipelineStageFlags src = vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlags dst = vk::PipelineStageFlagBits::eAllCommands);
+
 		void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type);
 
 		void copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, QueueType queue);
@@ -199,6 +203,8 @@ namespace MVT {
 		void endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, QueueType type, bool fence = false);
 
 		void endSingleTimeCommands(vk::raii::CommandBuffer &commandBuffer, vk::Queue queue, vk::Fence fence = nullptr);
+
+		[[nodiscard]] uint32_t getFamilyIndex(QueueType type) const;
 
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
@@ -231,8 +237,8 @@ namespace MVT {
 		uint32_t presentFamily{};
 		vk::raii::Queue presentQueue = nullptr;
 
-		uint32_t transferFamily{};
-		vk::raii::Queue transferQueue = nullptr;
+		// uint32_t transferFamily{};
+		// vk::raii::Queue transferQueue = nullptr;
 
 		vk::Format swapChainImageFormat = vk::Format::eUndefined;
 		vk::Extent2D swapChainExtent;
@@ -243,8 +249,8 @@ namespace MVT {
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 
-		vk::raii::CommandPool transfersPool = nullptr;
-		// std::vector<vk::raii::CommandBuffer> transferCommands{};
+		// vk::raii::CommandPool transfersPool = nullptr;
+		// // std::vector<vk::raii::CommandBuffer> transferCommands{};
 		vk::raii::Fence transferFence = nullptr;
 
 		vk::raii::CommandPool commandPool = nullptr;
