@@ -124,17 +124,15 @@ namespace MVT {
 
 		void createDepthResources();
 
-		void createTextureImage();
+		VkTexture createTextureImage(const char *path);
 
-		void createTextureImageView();
+		void createTextureImage();
 
 		vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
 
 		vk::Format findDepthFormat();
 
 		bool hasStencilComponent(vk::Format format);
-
-		void createTextureSampler();
 
 		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
 
@@ -148,6 +146,7 @@ namespace MVT {
 
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory, const std::vector<uint32_t> &families);
 
+		void loadModel();
 
 		template<uint64_t count>
 		inline void createVertexBuffer(const std::array<Vertex, count> &vertices) {
@@ -278,10 +277,14 @@ namespace MVT {
 		vk::raii::DeviceMemory depthImageMemory = nullptr;
 		std::vector<vk::raii::ImageView> depthImageViews{};
 
-		vk::raii::Image textureImage = nullptr;
-		vk::raii::DeviceMemory textureImageMemory = nullptr;
-		vk::raii::ImageView textureView = nullptr;
-		vk::raii::Sampler textureSampler = nullptr;
+		// vk::raii::Image textureImage = nullptr;
+		// vk::raii::DeviceMemory textureImageMemory = nullptr;
+		// vk::raii::ImageView textureView = nullptr;
+		// vk::raii::Sampler textureSampler = nullptr;
+
+		VkTexture texture;
+
+		VkMesh model;
 
 		vk::raii::Buffer vertexBuffer = nullptr;
 		vk::raii::DeviceMemory vertexBufferMemory = nullptr;

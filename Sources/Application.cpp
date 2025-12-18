@@ -78,8 +78,8 @@ namespace MVT {
 		createSyncObjects();
 
 		createTextureImage();
-		createTextureImageView();
-		createTextureSampler();
+
+		loadModel();
 
 		createVertexBuffer(two_rectangle_vertices);
 		createIndexBuffer(two_rectangle_indices);
@@ -174,10 +174,11 @@ namespace MVT {
 		inFlightFences.clear();
 		transferFence.clear();
 
-		textureSampler.clear();
-		textureView.clear();
-		textureImageMemory.clear();
-		textureImage.clear();
+		texture.clear();
+		// textureSampler.clear();
+		// textureView.clear();
+		// textureImageMemory.clear();
+		// textureImage.clear();
 
 		commandBuffers.clear();
 		// transferCommands.clear();
@@ -783,14 +784,20 @@ namespace MVT {
 		}
 	}
 
-	void Application::createTextureImage() {
+	VkTexture Application::createTextureImage(const char *path) {
+		VkTexture texture;
+
 		int texWidth, texHeight, texChannels;
-		stbi_uc *const pixels = stbi_load("EngineAssets/Textures/texture.jpg", &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
+		stbi_uc *const pixels = stbi_load(path, &texWidth, &texHeight, &texChannels, STBI_rgb_alpha);
 		vk::DeviceSize imageSize = texWidth * texHeight * 4;
 
 		if (!pixels) {
 			throw std::runtime_error("failed to load texture image!");
 		}
+
+		texture.width = texWidth;
+		texture.height = texHeight;
+		texture.channels = 4;
 
 		vk::raii::Buffer stagingBuffer({});
 		vk::raii::DeviceMemory stagingBufferMemory({});
@@ -805,16 +812,27 @@ namespace MVT {
 
 		// vk::raii::Image textureImageTemp({});
 		// vk::raii::DeviceMemory textureImageMemoryTemp({});
-		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, textureImage, textureImageMemory);
+		createImage(texWidth, texHeight, vk::Format::eR8G8B8A8Srgb, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.memory);
 
-		transitionImageLayout(textureImage, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer);
-		copyBufferToImage(stagingBuffer, textureImage, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
-		transitionImageLayout(textureImage, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, QueueType::Graphics);
+		transitionImageLayout(texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer);
+		copyBufferToImage(stagingBuffer, texture.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
+		transitionImageLayout(texture.image, vk::ImageLayout::eTransferDstOptimal, vk::ImageLayout::eShaderReadOnlyOptimal, QueueType::Graphics);
+
+		texture.view = createImageView(texture.image, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+		texture.sampler = createImageSampler();
+
+		return texture;
 	}
 
-	void Application::createTextureImageView() {
-		textureView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+	void Application::createTextureImage() {
+		const char* path = "EngineAssets/Textures/texture.jpg";
+
+		texture = createTextureImage(path);
 	}
+
+	// void Application::createTextureImageView() {
+	// 	textureView = createImageView(textureImage, vk::Format::eR8G8B8A8Srgb, vk::ImageAspectFlagBits::eColor);
+	// }
 
 	vk::Format Application::findSupportedFormat(const std::vector<vk::Format> &candidates, const vk::ImageTiling tiling, const vk::FormatFeatureFlags features) {
 		for (const auto format: candidates) {
@@ -842,9 +860,9 @@ namespace MVT {
 		return format == vk::Format::eD32SfloatS8Uint || format == vk::Format::eD24UnormS8Uint;
 	}
 
-	void Application::createTextureSampler() {
-		textureSampler = createImageSampler();
-	}
+	// void Application::createTextureSampler() {
+	// 	textureSampler = createImageSampler();
+	// }
 
 	void Application::createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
 		createImage(width, height, format, tiling, usage, properties, image, imageMemory, {graphicsFamily});
@@ -921,6 +939,10 @@ namespace MVT {
 		vk::MemoryAllocateInfo allocInfo{.allocationSize = memRequirements.size, .memoryTypeIndex = findMemoryType(memRequirements.memoryTypeBits, properties)};
 		bufferMemory = vk::raii::DeviceMemory(device, allocInfo);
 		buffer.bindMemory(*bufferMemory, 0);
+	}
+
+	void Application::loadModel() {
+		// createTextureImage()
 	}
 
 	void Application::createVertexBuffer(const std::vector<Vertex> &vertices) {
@@ -1007,7 +1029,7 @@ namespace MVT {
 
 		for (size_t i = 0; i < MAX_FRAMES_IN_FLIGHT; i++) {
 			vk::DescriptorBufferInfo bufferInfo{.buffer = uniformBuffers[i], .offset = 0, .range = sizeof(UniformBufferObject)};
-			vk::DescriptorImageInfo imageInfo{.sampler = textureSampler, .imageView = textureView, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
+			vk::DescriptorImageInfo imageInfo{.sampler = texture.sampler, .imageView = texture.view, .imageLayout = vk::ImageLayout::eShaderReadOnlyOptimal};
 
 			std::array descriptors{
 				vk::WriteDescriptorSet{.dstSet = descriptorSets[i], .dstBinding = 0, .dstArrayElement = 0, .descriptorCount = 1, .descriptorType = vk::DescriptorType::eUniformBuffer, .pBufferInfo = &bufferInfo},

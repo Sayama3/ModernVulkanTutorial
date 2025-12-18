@@ -63,9 +63,47 @@ namespace MVT {
 		4u, 5u, 6u, 6u, 7u, 4u,
 	};
 
-	struct Mesh {
+	struct VkTexture {
 	public:
-	private:
+		void clear() {
+			sampler.clear();
+			view.clear();
+			memory.clear();
+			image.clear();
+			width = 0;
+			height = 0;
+			channels = 0;
+		}
+	public:
+		vk::raii::Image image = nullptr;
+		vk::raii::DeviceMemory memory = nullptr;
+		vk::raii::ImageView view = nullptr;
+		vk::raii::Sampler sampler = nullptr;
+		uint32_t width = 0, height = 0, channels = 0;
+	};
+
+	struct VkMesh {
+	public:
+		void clear() {
+			textures.clear();
+			m_VertexMemory.clear();
+			m_IndicesMemory.clear();
+			m_VertexBuffer.clear();
+			m_IndexBuffer.clear();
+			indicesCount = 0;
+			vertexCount = 0;
+		}
+	public:
+		std::vector<VkTexture> textures = {};
+		//std::vector<vk::raii::Buffer> uniformBuffers;
+		//std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;
+		//std::vector<void *> uniformBuffersMapped;
+		vk::raii::Buffer m_VertexBuffer = nullptr;
+		vk::raii::DeviceMemory m_VertexMemory = nullptr;
+		vk::raii::Buffer m_IndexBuffer = nullptr;
+		vk::raii::DeviceMemory m_IndicesMemory = nullptr;
+		uint32_t indicesCount = 0;
+		uint32_t vertexCount = 0;
 	};
 } // MVT
 
