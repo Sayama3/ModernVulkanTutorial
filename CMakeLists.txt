@@ -41,6 +41,8 @@ set(SOURCES
 		Includes/MVT/VmaBuffer.hpp
 		Includes/MVT/UniformBufferObject.hpp
 		Sources/STB_ThirdParty.cpp
+		Sources/VulkanAllocation.cpp
+		Includes/MVT/VulkanAllocation.hpp
 )
 
 add_executable(${PROJECT_NAME} ${SOURCES})
