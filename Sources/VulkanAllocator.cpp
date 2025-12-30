@@ -49,7 +49,7 @@ namespace MVT {
 		std::swap(counter, o.counter);
 	}
 
-	VulkanAllocator::SubAllocation::SubAllocation(const uint64_t _id, const uint64_t _size, const uint64_t _offset, std::atomic_uint64_t *_counter) : id(_id_), size(_size), offset(_offset), counter(_counter) {
+	VulkanAllocator::SubAllocation::SubAllocation(const uint64_t _id, const uint64_t _size, const uint64_t _offset, std::atomic_uint64_t *_counter) : id(_id), size(_size), offset(_offset), counter(_counter) {
 		if (counter) {
 			std::atomic_fetch_add_explicit(counter, 1, std::memory_order_release);
 		}
@@ -142,11 +142,11 @@ namespace MVT {
 		return count;
 	}
 
-	VulkanAllocator::VulkanAllocator(const vk::raii::Device* device) : device(device) {
+	VulkanAllocator::VulkanAllocator(vk::raii::Device* device) : device(device) {
 		name = "#"s + std::to_string((uint64_t) this);
 	}
 
-	VulkanAllocator::VulkanAllocator(const vk::raii::Device* device, std::string name) : device(device), name(std::move(name)) {
+	VulkanAllocator::VulkanAllocator(vk::raii::Device* device, std::string name) : device(device), name(std::move(name)) {
 	}
 
 	VulkanAllocator::~VulkanAllocator() {

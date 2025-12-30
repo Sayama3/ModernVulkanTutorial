@@ -7,6 +7,7 @@
 #include <vulkan/vulkan.hpp>
 #include <vulkan/vulkan_raii.hpp>
 #include <optional>
+#include <cstdint>
 
 namespace MVT {
 	class VulkanAllocator {
@@ -72,8 +73,8 @@ namespace MVT {
 			friend class VulkanAllocator;
 		};
 	private:
-		VulkanAllocator(const vk::raii::Device* device);
-		VulkanAllocator(const vk::raii::Device* device, std::string name);
+		VulkanAllocator(vk::raii::Device* device);
+		VulkanAllocator(vk::raii::Device* device, std::string name);
 		~VulkanAllocator();
 	public:
 

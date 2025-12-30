@@ -146,7 +146,12 @@ namespace MVT {
 
 		void createBuffer(vk::DeviceSize size, vk::BufferUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Buffer &buffer, vk::raii::DeviceMemory &bufferMemory, const std::vector<uint32_t> &families);
 
-		void loadModel();
+		std::vector<VkMesh> loadModel(const char *cpath);
+
+		void loadModel(const char *cModelPath, const char **cTexturesPaths, uint32_t textureCount);
+
+		MVT::VkMesh createMesh(const Vertex* pVertices, uint32_t verticesCount);
+		MVT::VkMesh createMesh(const Vertex* pVertices, uint32_t verticesCount, const uint32_t *pIndices, uint32_t indicesCount);
 
 		template<uint64_t count>
 		inline void createVertexBuffer(const std::array<Vertex, count> &vertices) {
@@ -159,12 +164,16 @@ namespace MVT {
 
 		void createVertexBuffer(const Vertex *vertices, uint64_t count);
 
+		std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> makeVertexBuffer(const Vertex *vertices, uint64_t count);
+
 		template<uint64_t count>
 		void createIndexBuffer(const std::array<uint32_t, count> &indices) { createIndexBuffer(indices.data(), indices.size()); }
 
 		void createIndexBuffer(const std::vector<uint32_t> &indices) { createIndexBuffer(indices.data(), indices.size()); }
 
 		void createIndexBuffer(const uint32_t *indices, uint32_t count);
+
+		std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> makeIndexBuffer(const uint32_t *indices, uint32_t count);
 
 		void createUniformBuffers();
 
@@ -278,6 +287,7 @@ namespace MVT {
 		std::vector<vk::raii::ImageView> depthImageViews{};
 
 		// vk::raii::Image textureImage = nullptr;
+		
 		// vk::raii::DeviceMemory textureImageMemory = nullptr;
 		// vk::raii::ImageView textureView = nullptr;
 		// vk::raii::Sampler textureSampler = nullptr;
@@ -292,6 +302,8 @@ namespace MVT {
 		vk::raii::Buffer indexBuffer = nullptr;
 		vk::raii::DeviceMemory indexBufferMemory = nullptr;
 		uint32_t indices_count = 0;
+
+		std::vector<VkMesh> m_Meshes;
 
 		std::vector<vk::raii::Buffer> uniformBuffers;
 		std::vector<vk::raii::DeviceMemory> uniformBuffersMemory;

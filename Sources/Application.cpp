@@ -4,6 +4,7 @@
 
 #include "MVT/Application.hpp"
 
+
 #include <algorithm>
 #include <chrono>
 #include <cstdlib>
@@ -14,6 +15,7 @@
 #include <SDL3/SDL.h>
 #include <SDL3/SDL_vulkan.h>
 #include <vulkan/vulkan.hpp>
+#include <tiny_obj_loader.h>
 
 #include "MVT/GLM.hpp"
 #include "MVT/Mesh.hpp"
@@ -79,7 +81,9 @@ namespace MVT {
 
 		createTextureImage();
 
-		loadModel();
+		std::array textures = {"EngineAssets/Textures/viking_room.png"};
+
+		loadModel("EngineAssets/Models/viking_room.obj", textures.data(), textures.size());
 
 		createVertexBuffer(two_rectangle_vertices);
 		createIndexBuffer(two_rectangle_indices);
@@ -169,6 +173,8 @@ namespace MVT {
 		vertexBufferMemory.clear();
 		vertexBuffer.clear();
 
+		m_Meshes.clear();
+
 		presentCompleteSemaphores.clear();
 		renderFinishedSemaphores.clear();
 		inFlightFences.clear();
@@ -179,6 +185,7 @@ namespace MVT {
 		// textureView.clear();
 		// textureImageMemory.clear();
 		// textureImage.clear();
+
 
 		commandBuffers.clear();
 		// transferCommands.clear();
@@ -825,7 +832,8 @@ namespace MVT {
 	}
 
 	void Application::createTextureImage() {
-		const char* path = "EngineAssets/Textures/texture.jpg";
+		// const char* path = "EngineAssets/Textures/texture.jpg";
+		const char* path = "EngineAssets/Textures/viking_room.png";
 
 		texture = createTextureImage(path);
 	}
@@ -941,8 +949,85 @@ namespace MVT {
 		buffer.bindMemory(*bufferMemory, 0);
 	}
 
-	void Application::loadModel() {
-		// createTextureImage()
+	void Application::loadModel(const char *cModelPath, const char** cTexturesPaths, uint32_t textureCount) {
+		auto models = loadModel(cModelPath);
+		auto& model = models[0];
+		model.textures.reserve(textureCount);
+		for (uint32_t i = 0; i < textureCount; ++i) {
+			model.textures.emplace_back(createTextureImage(cTexturesPaths[i]));
+		}
+
+		m_Meshes = std::move(models);
+	}
+
+	std::vector<MVT::VkMesh> Application::loadModel(const char *cpath) {
+		std::vector<Vertex> vertices;
+
+		tinyobj::attrib_t attrib;
+		std::vector<tinyobj::shape_t> shapes;
+		std::vector<tinyobj::material_t> materials;
+		std::string warn, err;
+
+		if (!tinyobj::LoadObj(&attrib, &shapes, &materials, &warn, &err, cpath)) {
+			throw std::runtime_error(warn + err);
+		}
+
+		vertices.reserve(attrib.vertices.size());
+
+		// We’re going to combine all the faces in the file into a single model, so just iterate over all the shapes
+		for (const auto& shape : shapes) {
+			for (const auto& index : shape.mesh.indices) {
+				Vertex vertex{};
+
+				vertex.pos = {
+					attrib.vertices[3 * index.vertex_index + 0],
+					attrib.vertices[3 * index.vertex_index + 1],
+					attrib.vertices[3 * index.vertex_index + 2]
+				};
+
+				vertex.uv = {
+					attrib.texcoords[2 * index.texcoord_index + 0],
+					1.0f - attrib.texcoords[2 * index.texcoord_index + 1]
+				};
+
+				vertex.color = {1.0f, 1.0f, 1.0f};
+
+				vertices.push_back(vertex);
+			}
+
+		}
+
+		VkMesh mesh = createMesh(vertices.data(), static_cast<uint32_t>(vertices.size()));
+		std::vector<MVT::VkMesh> meshes;
+		meshes.emplace_back(std::move(mesh));
+		return std::move(meshes);
+	}
+
+	MVT::VkMesh Application::createMesh(const Vertex *pVertices, uint32_t verticesCount) {
+		std::vector<uint32_t> indices{};
+		indices.resize(verticesCount, ~0u);
+		for (uint32_t i = 0; i < verticesCount; ++i) {
+			indices[i] = i;
+		}
+
+		return createMesh(pVertices, verticesCount, indices.data(), verticesCount);
+	}
+
+	MVT::VkMesh Application::createMesh(const Vertex *pVertices, const uint32_t verticesCount, const uint32_t *pIndices, const uint32_t indicesCount) {
+		MVT::VkMesh mesh{};
+
+		auto vert = makeVertexBuffer(pVertices, verticesCount);
+		mesh.m_VertexBuffer = std::move(vert.first);
+		mesh.m_VertexMemory = std::move(vert.second);
+
+		auto ind = makeIndexBuffer(pIndices, indicesCount);
+		mesh.m_IndexBuffer = std::move(ind.first);
+		mesh.m_IndicesMemory = std::move(ind.second);
+
+		mesh.indicesCount = indicesCount;
+		mesh.vertexCount = verticesCount;
+
+		return std::move(mesh);
 	}
 
 	void Application::createVertexBuffer(const std::vector<Vertex> &vertices) {
@@ -973,6 +1058,27 @@ namespace MVT {
 		//transferBufferQueue(vertexBuffer, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
 	}
 
+	std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> Application::makeVertexBuffer(const Vertex *vertices, const uint64_t count) {
+		std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> pair{nullptr, nullptr};
+		const vk::DeviceSize bufferSize = sizeof(Vertex) * count;
+
+		vk::raii::Buffer stagingBuffer = nullptr;
+		vk::raii::DeviceMemory stagingBufferMemory = nullptr;
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+
+		void *dataStaging = stagingBufferMemory.mapMemory(0, bufferSize);
+		memcpy(dataStaging, vertices, bufferSize);
+		stagingBufferMemory.unmapMemory();
+
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eVertexBuffer | vk::BufferUsageFlagBits::eTransferDst, vk::MemoryPropertyFlagBits::eDeviceLocal, pair.first, pair.second);
+
+		copyBuffer(stagingBuffer, pair.first, bufferSize, transferFence, commandPool, graphicsQueue);
+		waitAndResetFence();
+		//transferBufferQueue(pair.first, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
+
+		return std::move(pair);
+	}
+
 	void Application::createIndexBuffer(const uint32_t *indices, const uint32_t count) {
 		indices_count = count;
 		vk::DeviceSize bufferSize = sizeof(indices[0]) * count;
@@ -990,6 +1096,29 @@ namespace MVT {
 		copyBuffer(stagingBuffer, indexBuffer, bufferSize, transferFence, commandPool, graphicsQueue);
 		waitAndResetFence();
 		//transferBufferQueue(indexBuffer, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
+	}
+
+	std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> Application::makeIndexBuffer(const uint32_t *indices, const uint32_t count) {
+		std::pair<vk::raii::Buffer, vk::raii::DeviceMemory> pair{nullptr, nullptr};
+
+		// indices_count = count;
+		vk::DeviceSize bufferSize = sizeof(indices[0]) * count;
+		vk::raii::Buffer stagingBuffer({});
+		vk::raii::DeviceMemory stagingBufferMemory({});
+
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferSrc, vk::MemoryPropertyFlagBits::eHostVisible | vk::MemoryPropertyFlagBits::eHostCoherent, stagingBuffer, stagingBufferMemory);
+
+		void *data = stagingBufferMemory.mapMemory(0, bufferSize);
+		memcpy(data, indices, (size_t) bufferSize);
+		stagingBufferMemory.unmapMemory();
+
+		createBuffer(bufferSize, vk::BufferUsageFlagBits::eTransferDst | vk::BufferUsageFlagBits::eIndexBuffer, vk::MemoryPropertyFlagBits::eDeviceLocal, pair.first, pair.second);
+
+		copyBuffer(stagingBuffer, pair.first, bufferSize, transferFence, commandPool, graphicsQueue);
+		waitAndResetFence();
+		//transferBufferQueue(pair.first, QueueType::Transfer, QueueType::Graphics,vk::PipelineStageFlagBits::eTopOfPipe, vk::PipelineStageFlagBits::eVertexInput);
+
+		return std::move(pair);
 	}
 
 	void Application::createUniformBuffers() {
@@ -1185,6 +1314,14 @@ namespace MVT {
 
 			commandBuffers[currentFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[currentFrame], nullptr);
 			commandBuffers[currentFrame].drawIndexed(indices_count, 1, 0, 0, 0);
+
+			for (auto& mesh : m_Meshes) {
+				commandBuffers[currentFrame].bindVertexBuffers(0, *mesh.m_VertexBuffer, {0});
+				commandBuffers[currentFrame].bindIndexBuffer(*mesh.m_IndexBuffer, 0, vk::IndexType::eUint32);
+
+				commandBuffers[currentFrame].bindDescriptorSets(vk::PipelineBindPoint::eGraphics, pipelineLayout, 0, *descriptorSets[currentFrame], nullptr);
+				commandBuffers[currentFrame].drawIndexed(mesh.indicesCount, 1, 0, 0, 0);
+			}
 
 			commandBuffers[currentFrame].endRendering();
 		}
