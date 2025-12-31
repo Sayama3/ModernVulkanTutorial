@@ -962,6 +962,7 @@ namespace MVT {
 
 	std::vector<MVT::VkMesh> Application::loadModel(const char *cpath) {
 		std::vector<Vertex> vertices;
+		std::vector<uint32_t> indices;
 
 		tinyobj::attrib_t attrib;
 		std::vector<tinyobj::shape_t> shapes;
@@ -973,6 +974,10 @@ namespace MVT {
 		}
 
 		vertices.reserve(attrib.vertices.size());
+		indices.reserve(attrib.vertices.size());
+
+		std::unordered_map<Vertex, uint32_t> uniqueVertices{};
+		uniqueVertices.reserve(attrib.vertices.size());
 
 		// We’re going to combine all the faces in the file into a single model, so just iterate over all the shapes
 		for (const auto& shape : shapes) {
@@ -992,12 +997,16 @@ namespace MVT {
 
 				vertex.color = {1.0f, 1.0f, 1.0f};
 
-				vertices.push_back(vertex);
-			}
+				if (!uniqueVertices.contains(vertex)) {
+					uniqueVertices[vertex] = static_cast<uint32_t>(vertices.size());
+					vertices.push_back(vertex);
+				}
 
+				indices.push_back(uniqueVertices[vertex]);
+			}
 		}
 
-		VkMesh mesh = createMesh(vertices.data(), static_cast<uint32_t>(vertices.size()));
+		VkMesh mesh = createMesh(vertices.data(), static_cast<uint32_t>(vertices.size()), indices.data(), indices.size());
 		std::vector<MVT::VkMesh> meshes;
 		meshes.emplace_back(std::move(mesh));
 		return std::move(meshes);
