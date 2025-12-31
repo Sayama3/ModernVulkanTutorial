@@ -126,6 +126,8 @@ namespace MVT {
 
 		VkTexture createTextureImage(const char *path);
 
+		void generateMipmaps(vk::Image image, vk::Format imageFormat, uint32_t texWidth, uint32_t texHeight, uint32_t mipLevels);
+
 		void createTextureImage();
 
 		vk::Format findSupportedFormat(const std::vector<vk::Format> &candidates, vk::ImageTiling tiling, vk::FormatFeatureFlags features);
@@ -134,11 +136,11 @@ namespace MVT {
 
 		bool hasStencilComponent(vk::Format format);
 
-		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
+		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
 
-		void createImage(uint32_t width, uint32_t height, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
+		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
 
-		vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags imageAspect);
+		vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags imageAspect, uint32_t mipLevels);
 
 		vk::raii::Sampler createImageSampler();
 
@@ -200,7 +202,7 @@ namespace MVT {
 
 		// void transferBufferQueue(const vk::Buffer &buffer, QueueType oldQueue, QueueType newQueue, vk::PipelineStageFlags src = vk::PipelineStageFlagBits::eAllCommands, vk::PipelineStageFlags dst = vk::PipelineStageFlagBits::eAllCommands);
 
-		void transitionImageLayout(const vk::raii::Image& image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type);
+		void transitionImageLayout(const vk::raii::Image &image, vk::ImageLayout oldLayout, vk::ImageLayout newLayout, QueueType type, uint32_t mipLevels);
 
 		void copyBufferToImage(vk::Buffer buffer, vk::Image image, uint32_t width, uint32_t height, QueueType queue);
 

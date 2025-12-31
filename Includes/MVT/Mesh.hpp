@@ -56,13 +56,21 @@ namespace MVT {
 			width = 0;
 			height = 0;
 			channels = 0;
+			mipLevels = 0;
 		}
+
+		void CalcMipLevels() {
+			mipLevels = static_cast<uint32_t>(std::floor(std::log2(std::max(width, height)))) + 1u;
+		}
+
 	public:
 		vk::raii::Image image = nullptr;
 		vk::raii::DeviceMemory memory = nullptr;
 		vk::raii::ImageView view = nullptr;
 		vk::raii::Sampler sampler = nullptr;
+		vk::Format format = vk::Format::eUndefined;
 		uint32_t width = 0, height = 0, channels = 0;
+		uint32_t mipLevels = 0;
 	};
 
 	struct VkMesh {
