@@ -70,6 +70,7 @@ namespace MVT {
 
 		createSwapChain();
 		createSwapChainViews();
+		createColorResources();
 		createDepthResources();
 
 		createDescriptorSetLayout();
@@ -198,6 +199,10 @@ namespace MVT {
 		pipelineLayout.clear();
 
 		descriptorSetLayout.clear();
+
+		colorImages.clear();
+		colorImageMemories.clear();
+		colorImageViews.clear();
 
 		depthImageViews.clear();
 		depthImageMemory.clear();
@@ -380,9 +385,9 @@ namespace MVT {
 		debugMessenger = instance.createDebugUtilsMessengerEXT(debugUtilsMessengerCreateInfoEXT);
 	}
 
-	bool Application::RatePhysicalDevice(const std::vector<vk::raii::PhysicalDevice>::value_type &device, uint32_t &score) {
-		auto deviceProperties = device.getProperties();
-		auto deviceFeatures = device.getFeatures();
+	bool Application::RatePhysicalDevice(const vk::PhysicalDevice device, uint32_t &score) {
+		const auto deviceProperties = device.getProperties();
+		const auto deviceFeatures = device.getFeatures();
 		score = 0;
 
 		// Application can't function without geometry shaders
@@ -397,8 +402,10 @@ namespace MVT {
 
 		// // Application can't function without Anisotropy Sampler
 		if (deviceFeatures.samplerAnisotropy) {
-			score += 10;
+			score += deviceProperties.limits.maxSamplerAnisotropy * 10;
 		}
+
+		score *= static_cast<uint32_t>(getMaxUsableSampleCount(device));
 
 		// Maximum possible size of textures affects graphics quality
 		score += deviceProperties.limits.maxImageDimension2D;
@@ -431,6 +438,7 @@ namespace MVT {
 		// Check if the best candidate is suitable at all
 		if (candidates.rbegin()->first > 0) {
 			physicalDevice = candidates.rbegin()->second;
+			msaaSamples = getMaxUsableSampleCount();
 			const auto properties = physicalDevice.getProperties();
 			std::cout << "Select GPU '" << &properties.deviceName[0] << "'" << std::endl;
 		}
@@ -683,14 +691,17 @@ namespace MVT {
 			.depthBiasSlopeFactor = 1.0f, .lineWidth = 1.0f
 		};
 
-		vk::PipelineMultisampleStateCreateInfo multisampling{.rasterizationSamples = vk::SampleCountFlagBits::e1, .sampleShadingEnable = vk::False};
+		vk::PipelineMultisampleStateCreateInfo multisampling{
+			.rasterizationSamples = msaaSamples,
+			.sampleShadingEnable = vk::False
+		};
 
 		vk::PipelineDepthStencilStateCreateInfo depthStencil{
 			.depthTestEnable = vk::True,
 			.depthWriteEnable = vk::True,
 			.depthCompareOp = vk::CompareOp::eLess,
 			.depthBoundsTestEnable = vk::False,
-			.stencilTestEnable = vk::False
+			.stencilTestEnable = vk::False,
 		};
 
 		vk::PipelineColorBlendAttachmentState colorBlendAttachment{
@@ -728,8 +739,7 @@ namespace MVT {
 				.pMultisampleState = &multisampling, .pDepthStencilState = &depthStencil, .pColorBlendState = &colorBlending,
 				.pDynamicState = &dynamicState, .layout = pipelineLayout, .renderPass = nullptr,
 				.basePipelineHandle = VK_NULL_HANDLE, // Optional
-				.basePipelineIndex = -1 // Optional
-
+				.basePipelineIndex = -1, // Optional
 			},
 			{
 				.colorAttachmentCount = 1,
@@ -752,6 +762,27 @@ namespace MVT {
 		// }
 	}
 
+	void Application::createColorResources() {
+		const vk::Format colorFormat = swapChainImageFormat;
+
+		colorImages.clear();
+		colorImageMemories.clear();
+		colorImageViews.clear();
+
+		colorImages.reserve(depthCount);
+		colorImageMemories.reserve(depthCount);
+		colorImageViews.reserve(depthCount);
+
+		for (uint64_t i = 0; i < depthCount; ++i) {
+			colorImages.emplace_back(nullptr);
+			colorImageMemories.emplace_back(nullptr);
+			colorImageViews.emplace_back(nullptr);
+
+			createImage(swapChainExtent.width, swapChainExtent.height, 1, msaaSamples, colorFormat, vk::ImageTiling::eOptimal, vk::ImageUsageFlagBits::eTransientAttachment | vk::ImageUsageFlagBits::eColorAttachment,  vk::MemoryPropertyFlagBits::eDeviceLocal, colorImages.back(), colorImageMemories.back());
+			colorImageViews.back() = createImageView(colorImages.back(), colorFormat, vk::ImageAspectFlagBits::eColor, 1);
+		}
+	}
+
 	void Application::createDepthResources() {
 		// One memory allocation for all the depths images needed.
 		depthFormat = findDepthFormat();
@@ -766,7 +797,7 @@ namespace MVT {
 		vk::ImageCreateInfo imageInfo{
 			.imageType = vk::ImageType::e2D, .format = depthFormat,
 			.extent = {swapChainExtent.width, swapChainExtent.height, 1}, .mipLevels = 1, .arrayLayers = 1,
-			.samples = vk::SampleCountFlagBits::e1, .tiling = vk::ImageTiling::eOptimal,
+			.samples = msaaSamples, .tiling = vk::ImageTiling::eOptimal,
 			.usage = vk::ImageUsageFlagBits::eDepthStencilAttachment,
 			.sharingMode = vk::SharingMode::eExclusive,
 		};
@@ -821,7 +852,7 @@ namespace MVT {
 		// vk::raii::Image textureImageTemp({});
 		// vk::raii::DeviceMemory textureImageMemoryTemp({});
 		texture.format = vk::Format::eR8G8B8A8Srgb;
-		createImage(texture.width, texture.height, texture.mipLevels, texture.format, vk::ImageTiling::eOptimal,  vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.memory);
+		createImage(texture.width, texture.height, texture.mipLevels, vk::SampleCountFlagBits::e1, texture.format, vk::ImageTiling::eOptimal,  vk::ImageUsageFlagBits::eTransferSrc | vk::ImageUsageFlagBits::eTransferDst | vk::ImageUsageFlagBits::eSampled, vk::MemoryPropertyFlagBits::eDeviceLocal, texture.image, texture.memory);
 
 		transitionImageLayout(texture.image, vk::ImageLayout::eUndefined, vk::ImageLayout::eTransferDstOptimal, QueueType::Transfer, texture.mipLevels);
 		copyBufferToImage(stagingBuffer, texture.image, static_cast<uint32_t>(texWidth), static_cast<uint32_t>(texHeight), QueueType::Transfer);
@@ -948,15 +979,15 @@ namespace MVT {
 	// 	textureSampler = createImageSampler();
 	// }
 
-	void Application::createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
-		createImage(width, height, mipLevel, format, tiling, usage, properties, image, imageMemory, {graphicsFamily});
+	void Application::createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory) {
+		createImage(width, height, mipLevel, numSamples, format, tiling, usage, properties, image, imageMemory, {graphicsFamily});
 	}
 
-	void Application::createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families) {
+	void Application::createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families) {
 		vk::ImageCreateInfo imageInfo{
 			.imageType = vk::ImageType::e2D, .format = format,
 			.extent = {width, height, 1}, .mipLevels = mipLevel, .arrayLayers = 1,
-			.samples = vk::SampleCountFlagBits::e1, .tiling = tiling,
+			.samples = numSamples, .tiling = tiling,
 			.usage = usage,
 			.sharingMode = families.size() > 1 ? vk::SharingMode::eConcurrent : vk::SharingMode::eExclusive,
 			.queueFamilyIndexCount = static_cast<uint32_t>(families.size()),
@@ -1345,19 +1376,36 @@ namespace MVT {
 	void Application::recordCommandBuffer(const uint32_t imageIndex) {
 		commandBuffers[currentFrame].begin({});
 
+		auto& swapImg = swapChainImages[imageIndex];
+		auto& swapVw = swapChainImageViews[imageIndex];
+		auto& depthImg = depthImages[frameCount % depthCount];
+		auto& depthVw = depthImageViews[frameCount % depthCount];
+		auto& colorImg = colorImages[frameCount % depthCount];
+		auto& colorVw = colorImageViews[frameCount % depthCount];
+
 		// Before starting rendering, transition the swapchain image to COLOR_ATTACHMENT_OPTIMAL
 		transition_image_layout(
-			swapChainImages[imageIndex],
+			swapImg,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			{}, // srcAccessMask (no need to wait for previous operations)
 			vk::AccessFlagBits2::eColorAttachmentWrite, // dstAccessMask
-			vk::PipelineStageFlagBits2::eTopOfPipe, // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput, // srcStage
 			vk::PipelineStageFlagBits2::eColorAttachmentOutput // dstStage
 			, vk::ImageAspectFlagBits::eColor
 		);
 		transition_image_layout(
-			depthImages[frameCount % depthCount],
+			colorImg,
+			vk::ImageLayout::eUndefined,
+			vk::ImageLayout::eColorAttachmentOptimal,
+			vk::AccessFlagBits2::eColorAttachmentWrite, // srcAccessMask
+			vk::AccessFlagBits2::eColorAttachmentWrite, // dstAccessMask
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput, // srcStage
+			vk::PipelineStageFlagBits2::eColorAttachmentOutput // dstStage
+			, vk::ImageAspectFlagBits::eColor
+		);
+		transition_image_layout(
+			depthImg,
 			vk::ImageLayout::eUndefined,
 			vk::ImageLayout::eDepthAttachmentOptimal,
 			vk::AccessFlagBits2::eDepthStencilAttachmentWrite,
@@ -1375,15 +1423,18 @@ namespace MVT {
 		vk::ClearValue clearDepth = vk::ClearDepthStencilValue(1.0f, 0);
 
 		vk::RenderingAttachmentInfo attachmentInfo = {
-			.imageView = swapChainImageViews[imageIndex],
+			.imageView = colorVw,
 			.imageLayout = vk::ImageLayout::eColorAttachmentOptimal,
+			.resolveMode        = vk::ResolveModeFlagBits::eAverage,
+			.resolveImageView   = swapVw,
+			.resolveImageLayout = vk::ImageLayout::eColorAttachmentOptimal,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eStore,
 			.clearValue = clearColor
 		};
 
 		vk::RenderingAttachmentInfo depthAttachmentInfo = {
-			.imageView = depthImageViews[frameCount % depthCount],
+			.imageView = depthVw,
 			.imageLayout = vk::ImageLayout::eDepthAttachmentOptimal,
 			.loadOp = vk::AttachmentLoadOp::eClear,
 			.storeOp = vk::AttachmentStoreOp::eDontCare,
@@ -1422,7 +1473,7 @@ namespace MVT {
 
 		// After rendering, transition the swapchain image to PRESENT_SRC
 		transition_image_layout(
-			swapChainImages[imageIndex],
+			swapImg,
 			vk::ImageLayout::eColorAttachmentOptimal,
 			vk::ImageLayout::ePresentSrcKHR,
 			vk::AccessFlagBits2::eColorAttachmentWrite, // srcAccessMask
@@ -1698,6 +1749,25 @@ namespace MVT {
 		}
 
 		return -1;
+	}
+
+	vk::SampleCountFlagBits Application::getMaxUsableSampleCount() const {
+		return getMaxUsableSampleCount(physicalDevice);
+	}
+
+	vk::SampleCountFlagBits Application::getMaxUsableSampleCount(const vk::PhysicalDevice device) const {
+		const vk::PhysicalDeviceProperties physicalDeviceProperties = device.getProperties();
+
+		const vk::SampleCountFlags counts = physicalDeviceProperties.limits.framebufferColorSampleCounts & physicalDeviceProperties.limits.framebufferDepthSampleCounts;
+		if (counts & vk::SampleCountFlagBits::e64) { return vk::SampleCountFlagBits::e64; }
+		if (counts & vk::SampleCountFlagBits::e32) { return vk::SampleCountFlagBits::e32; }
+		if (counts & vk::SampleCountFlagBits::e16) { return vk::SampleCountFlagBits::e16; }
+		if (counts & vk::SampleCountFlagBits::e8) { return vk::SampleCountFlagBits::e8; }
+		if (counts & vk::SampleCountFlagBits::e4) { return vk::SampleCountFlagBits::e4; }
+		if (counts & vk::SampleCountFlagBits::e2) { return vk::SampleCountFlagBits::e2; }
+
+		return vk::SampleCountFlagBits::e1;
+
 	}
 
 	std::vector<const char *> Application::GetExtensions() {

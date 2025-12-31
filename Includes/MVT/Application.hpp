@@ -83,7 +83,7 @@ namespace MVT {
 
 		void setupDebugMessenger();
 
-		bool RatePhysicalDevice(const std::vector<vk::raii::PhysicalDevice>::value_type &device, uint32_t &score);
+		bool RatePhysicalDevice(vk::PhysicalDevice device, uint32_t &score);
 
 		void pickPhysicalDevice();
 
@@ -122,6 +122,8 @@ namespace MVT {
 
 		void createCommandPool();
 
+		void createColorResources();
+
 		void createDepthResources();
 
 		VkTexture createTextureImage(const char *path);
@@ -136,9 +138,9 @@ namespace MVT {
 
 		bool hasStencilComponent(vk::Format format);
 
-		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
+		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory);
 
-		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
+		void createImage(uint32_t width, uint32_t height, uint32_t mipLevel, vk::SampleCountFlagBits numSamples, vk::Format format, vk::ImageTiling tiling, vk::ImageUsageFlags usage, vk::MemoryPropertyFlags properties, vk::raii::Image &image, vk::raii::DeviceMemory &imageMemory, const std::vector<uint32_t> &families);
 
 		vk::raii::ImageView createImageView(vk::Image image, vk::Format format, vk::ImageAspectFlags imageAspect, uint32_t mipLevels);
 
@@ -232,6 +234,10 @@ namespace MVT {
 
 		[[nodiscard]] uint32_t getFamilyIndex(QueueType type) const;
 
+		[[nodiscard]] vk::SampleCountFlagBits getMaxUsableSampleCount() const;
+
+		[[nodiscard]] vk::SampleCountFlagBits getMaxUsableSampleCount(vk::PhysicalDevice device) const;
+
 	private: // Window Specific
 		/// Get all the extensions including compatibility layer and stuff like that.
 		/// @return Necessary Extensions
@@ -275,6 +281,8 @@ namespace MVT {
 		vk::raii::PipelineLayout pipelineLayout = nullptr;
 		vk::raii::Pipeline graphicsPipeline = nullptr;
 
+		vk::SampleCountFlagBits msaaSamples = vk::SampleCountFlagBits::e1;
+
 		// vk::raii::CommandPool transfersPool = nullptr;
 		// // std::vector<vk::raii::CommandBuffer> transferCommands{};
 		vk::raii::Fence transferFence = nullptr;
@@ -287,6 +295,10 @@ namespace MVT {
 		std::vector<vk::raii::Image> depthImages{};
 		vk::raii::DeviceMemory depthImageMemory = nullptr;
 		std::vector<vk::raii::ImageView> depthImageViews{};
+
+		std::vector<vk::raii::Image> colorImages = {};
+		std::vector<vk::raii::DeviceMemory> colorImageMemories = {};
+		std::vector<vk::raii::ImageView> colorImageViews = {};
 
 		// vk::raii::Image textureImage = nullptr;
 		
